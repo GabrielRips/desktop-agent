@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Desktop Agent</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .header {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            font-size: 24px;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+
+        .status {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            font-size: 14px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff4757;
+        }
+
+        .status-dot.active {
+            background: #2ed573;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+            min-height: 0;
+        }
+
+        .conversation {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            scroll-behavior: smooth;
+            max-height: calc(100vh - 200px);
+            min-height: 200px;
+        }
+
+        .conversation-content {
+            min-height: 100%;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            max-width: 80%;
+            word-wrap: break-word;
+        }
+
+        .message.user {
+            background: rgba(255, 255, 255, 0.2);
+            margin-left: auto;
+            text-align: right;
+        }
+
+        .message.assistant {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .message.system {
+            background: rgba(255, 193, 7, 0.2);
+            font-style: italic;
+            text-align: center;
+            max-width: 100%;
+        }
+
+        .message.interim {
+            background: rgba(0, 123, 255, 0.2);
+            font-style: italic;
+            border-left: 3px solid rgba(0, 123, 255, 0.8);
+            opacity: 0.8;
+        }
+
+        .message.transcript {
+            background: rgba(40, 167, 69, 0.2);
+            font-style: italic;
+            border-left: 3px solid rgba(40, 167, 69, 0.8);
+            opacity: 0.9;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn.primary {
+            background: rgba(46, 213, 115, 0.8);
+        }
+
+        .btn.primary:hover {
+            background: rgba(46, 213, 115, 1);
+        }
+
+        .btn.danger {
+            background: rgba(255, 71, 87, 0.8);
+        }
+
+        .btn.danger:hover {
+            background: rgba(255, 71, 87, 1);
+        }
+
+        .mic-indicator {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255, 71, 87, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .mic-indicator.listening {
+            background: rgba(46, 213, 115, 0.8);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .transcript {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-style: italic;
+            border-left: 4px solid rgba(255, 193, 7, 0.8);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Scrollbar styling */
+        .conversation::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .conversation::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        .conversation::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+
+        .conversation::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Desktop Agent</h1>
+        <div class="status">
+            <div class="status-item">
+                <div class="status-dot" id="wakeword-status"></div>
+                <span>Wake Word</span>
+            </div>
+            <div class="status-item">
+                <div class="status-dot" id="transcription-status"></div>
+                <span>Transcription</span>
+            </div>
+            <div class="status-item">
+                <div class="status-dot" id="chatgpt-status"></div>
+                <span>ChatGPT</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="conversation" id="conversation">
+            <div class="message system">
+                Say "Alexa" to activate the agent, then speak your question or request.
+            </div>
+        </div>
+
+        <div class="transcript hidden" id="transcript">
+            <strong>Listening:</strong> <span id="transcript-text"></span>
+        </div>
+
+        <div class="controls">
+            <button class="btn" id="start-btn">Start Agent</button>
+            <button class="btn" id="stop-btn">Stop Agent</button>
+            <button class="btn danger" id="clear-btn">Clear Chat</button>
+            <button class="btn" id="scroll-btn" title="Scroll to bottom">⬇️</button>
+            <button class="btn" id="test-btn" title="Test transcription">Test</button>
+            <button class="btn" id="debug-btn" title="Debug transcription flow">Debug</button>
+            <button class="btn" id="full-test-btn" title="Full transcription test">Full Test</button>
+            
+            <div class="mic-indicator" id="mic-indicator">
+                🎤
+            </div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html> 
