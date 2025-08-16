@@ -10,11 +10,30 @@ class WakeWordDetector:
     def __init__(self, model_name="alexa_v0.1"):
         print(f"Initializing WakeWordDetector with model: {model_name}", flush=True)
         
-        # Initialize the model (ONNX)
-        print("Loading openwakeword model...", flush=True)
-        self.model = Model(inference_framework="onnx")
-        self.model_name = model_name
-        print(f"Model loaded successfully: {self.model_name}", flush=True)
+        # Get the path to the custom model file  
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        model_path = os.path.join(script_dir, f"{model_name}.onnx")
+        
+        print(f"Looking for custom model at: {model_path}", flush=True)
+        if os.path.exists(model_path):
+            print("Loading custom openwakeword model...", flush=True)
+            try:
+                # Try ONNX first for custom model
+                self.model = Model(wakeword_models=[model_path], inference_framework="onnx")
+                self.model_name = model_name
+                print(f"✅ Custom model loaded successfully with ONNX: {self.model_name}", flush=True)
+            except Exception as e:
+                print(f"⚠️ ONNX failed for custom model: {e}", flush=True)
+                print("🔄 Trying TFLite framework for custom model...", flush=True)
+                self.model = Model(wakeword_models=[model_path], inference_framework="tflite")
+                self.model_name = model_name
+                print(f"✅ Custom model loaded successfully with TFLite: {self.model_name}", flush=True)
+        else:
+            print(f"❌ Custom model file not found: {model_path}", flush=True)
+            print("🔄 Falling back to built-in models with TFLite...", flush=True)
+            self.model = Model(inference_framework="tflite")
+            self.model_name = "built-in models"
+            print(f"✅ Built-in models loaded successfully with TFLite", flush=True)
         
         # PyAudio configuration
         self.RATE = 16000       # 16 kHz

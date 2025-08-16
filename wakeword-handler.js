@@ -26,16 +26,23 @@ class WakeWordHandler {
         const scriptPath = path.join(__dirname, 'wakeword_detector.py');
         console.log('📁 Script path:', scriptPath);
         
-        // Try multiple Python paths
+        // Try multiple Python paths - PRIORITIZE VENV FIRST!
         let pythonPath = null;
         const possiblePaths = [
-            // Try venv first
+            // Try venv first (where packages are installed!)
             process.platform === 'win32' 
-                ? path.join(__dirname, '..', 'venv', 'Scripts', 'python.exe')
-                : path.join(__dirname, '..', 'venv', 'bin', 'python'),
-            // Try system Python
-            'python',
+                ? path.join(__dirname, 'venv', 'Scripts', 'python.exe')
+                : path.join(__dirname, 'venv', 'bin', 'python'),
+            process.platform === 'win32' 
+                ? path.join(__dirname, 'venv', 'Scripts', 'python.exe')
+                : path.join(__dirname, 'venv', 'bin', 'python3'),
+            // Try system Python (fallback)
             'python3',
+            'python',
+            // Try common system paths for macOS
+            '/opt/homebrew/bin/python3',
+            '/usr/local/bin/python3',
+            '/usr/bin/python3',
             // Try with full path on Windows
             'C:\\Python311\\python.exe',
             'C:\\Python310\\python.exe',
