@@ -6,7 +6,11 @@
   "scripts": {
     "start": "npx electron .",
     "dev": "npx electron . --dev",
-    "setup": "node setup.js"
+    "setup": "node setup.js",
+    "test-venv": "node test-venv.js",
+    "test-wakeword": "node test-wakeword-handler.js",
+    "test-audio": "node test-audio-device.js",
+    "test-audio-transmission": "node test-audio-transmission.js"
   },
   "author": "",
   "license": "MIT",

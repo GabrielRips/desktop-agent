@@ -96,7 +96,12 @@ function startAgent() {
 
     // Start wake word detection
     wakeWordHandler.startDetection((detection) => {
-        console.log('🎉 Wake word detected:', detection);
+        console.log('�� Wake word detected in main.js callback:', detection);
+        console.log('🎉 Detection type:', detection.type);
+        console.log('🎉 Detection label:', detection.label);
+        console.log('🎉 Detection score:', detection.score);
+        console.log('🎉 Main window exists:', !!mainWindow);
+        console.log('🎉 Main window destroyed:', mainWindow ? mainWindow.isDestroyed() : 'N/A');
         
         // Check cooldown
         const now = Date.now();
@@ -108,11 +113,25 @@ function startAgent() {
         }
         
         lastWakeWordTime = now;
-        mainWindow.webContents.send('wake-word-detected', detection);
+        console.log('📤 Sending wake-word-detected to frontend:', detection);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            try {
+                mainWindow.webContents.send('wake-word-detected', detection);
+                console.log('✅ Wake word detection sent to frontend successfully');
+            } catch (error) {
+                console.error('❌ Error sending wake word detection to frontend:', error);
+            }
+        } else {
+            console.error('❌ Cannot send wake word detection - mainWindow not available or destroyed');
+        }
         
+        console.log('🚀 Starting transcription after wake word detection...');
         // Start listening for speech
         startListening();
     });
+
+    // Start audio capture immediately for wake word detection
+    mainWindow.webContents.send('start-audio-capture');
 
     // Update status
     updateStatus();
@@ -136,6 +155,9 @@ function stopAgent() {
     // Stop transcription
     transcriptionHandler.stopTranscription();
 
+    // Stop audio capture
+    mainWindow.webContents.send('stop-audio-capture');
+
     // Update status
     updateStatus();
     mainWindow.webContents.send('agent-stopped');
@@ -144,6 +166,7 @@ function stopAgent() {
 
 function startListening() {
     if (!isAgentRunning || isListening) {
+        console.log('⚠️ Cannot start listening - agent not running or already listening');
         return;
     }
 
@@ -151,15 +174,18 @@ function startListening() {
     isListening = true;
     currentTranscript = '';
 
+    console.log('🔧 Starting Deepgram transcription handler...');
     // Start Deepgram transcription
-    transcriptionHandler.startTranscription(
+    const transcriptionStarted = transcriptionHandler.startTranscription(
         (transcriptData) => {
+            console.log('📝 Transcription callback received:', transcriptData);
             // Handle transcript updates
             if (transcriptData.isFinal) {
                 console.log('📝 Final transcript:', transcriptData.transcript);
                 mainWindow.webContents.send('transcription-final', transcriptData);
                 
                 // Send to ChatGPT
+                console.log('🤖 Sending to ChatGPT:', transcriptData.transcript);
                 chatGPTHandler.sendMessage(
                     transcriptData.transcript,
                     (response) => {
@@ -187,9 +213,13 @@ function startListening() {
         }
     );
 
-    // Start audio capture in renderer process
-    mainWindow.webContents.send('start-audio-capture');
+    if (transcriptionStarted) {
+        console.log('✅ Transcription handler started successfully');
+    } else {
+        console.error('❌ Failed to start transcription handler');
+    }
 
+    // Audio capture is already running for wake word detection
     updateStatus();
 }
 
@@ -203,7 +233,7 @@ function stopListening() {
     currentTranscript = '';
 
     transcriptionHandler.stopTranscription();
-    mainWindow.webContents.send('stop-audio-capture');
+    // Don't stop audio capture - keep it running for wake word detection
     updateStatus();
 }
 
@@ -235,12 +265,27 @@ ipcMain.on('stop-listening', () => {
 });
 
 ipcMain.on('audio-data', (event, audioBuffer) => {
-    // Send audio data to Deepgram for transcription
+    // Send audio data to wake word detection and transcription
     console.log('📥 Received audio data from renderer, size:', audioBuffer.byteLength);
+    console.log('📥 Agent running:', isAgentRunning);
+    console.log('📥 Wake word handler exists:', !!wakeWordHandler);
+    console.log('📥 Transcription handler exists:', !!transcriptionHandler);
+    console.log('📥 Transcription active:', transcriptionHandler ? transcriptionHandler.isTranscriptionActive() : false);
+    
+    // Send to wake word handler if agent is running
+    if (wakeWordHandler && isAgentRunning) {
+        console.log('📤 Sending audio to wake word handler...');
+        wakeWordHandler.sendAudioData(audioBuffer);
+    } else {
+        console.log('⚠️ Not sending to wake word handler - agent not running or handler not available');
+    }
+    
+    // Send to transcription handler if listening
     if (transcriptionHandler && transcriptionHandler.isTranscriptionActive()) {
+        console.log('📤 Sending audio to transcription handler...');
         transcriptionHandler.sendAudio(audioBuffer);
     } else {
-        console.log('⚠️ Transcription handler not active, ignoring audio data');
+        console.log('⚠️ Transcription handler not active, ignoring audio data for transcription');
     }
 });
 

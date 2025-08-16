@@ -26,6 +26,32 @@ let audioCapture = null;
 
 // Initialize UI
 function initializeUI() {
+    console.log('🔧 Initializing UI...');
+    console.log('🔧 Conversation element:', conversationEl);
+    console.log('🔧 Mic indicator element:', micIndicator);
+    console.log('🔧 Start button element:', startBtn);
+    console.log('🔧 Stop button element:', stopBtn);
+    
+    // Validate that all required elements exist
+    if (!conversationEl) {
+        console.error('❌ Conversation element not found!');
+        return;
+    }
+    if (!micIndicator) {
+        console.error('❌ Mic indicator element not found!');
+        return;
+    }
+    if (!startBtn) {
+        console.error('❌ Start button element not found!');
+        return;
+    }
+    if (!stopBtn) {
+        console.error('❌ Stop button element not found!');
+        return;
+    }
+    
+    console.log('✅ All required DOM elements found');
+    
     updateStatusIndicators();
     setupEventListeners();
     ensureScrollToBottom();
@@ -33,6 +59,10 @@ function initializeUI() {
     // Initialize audio capture
     audioCapture = new AudioCapture();
     console.log('✅ Audio capture initialized in renderer');
+    
+    // Add initial message
+    addMessage('Say "Alexa" to activate the agent, then speak your question or request.', 'system');
+    console.log('✅ UI initialization complete');
 }
 
 function startAudioCapture() {
@@ -42,7 +72,7 @@ function startAudioCapture() {
     }
 
     audioCapture.startCapture((audioBuffer) => {
-        // Send audio data to main process for transcription
+        // Send audio data to main process for wake word detection and transcription
         console.log('📤 Sending audio data to main process, size:', audioBuffer.byteLength);
         ipcRenderer.send('audio-data', audioBuffer);
     });
@@ -159,6 +189,26 @@ function testFullTranscription() {
     }, 3000);
 }
 
+function testWakeWordDetection() {
+    console.log('🧪 Testing wake word detection display...');
+    
+    // Simulate the exact same event that would be sent from main process
+    const testDetection = {
+        type: 'wake_word_detected',
+        label: 'alexa',
+        score: 0.85,
+        timestamp: Date.now()
+    };
+    
+    console.log('🧪 Simulating wake word detection event with data:', testDetection);
+    
+    // Manually trigger the event handler
+    const event = { type: 'test' };
+    ipcRenderer.emit('wake-word-detected', event, testDetection);
+    
+    console.log('🧪 Wake word detection test completed');
+}
+
 function setupEventListeners() {
     startBtn.addEventListener('click', startAgent);
     stopBtn.addEventListener('click', stopAgent);
@@ -168,6 +218,12 @@ function setupEventListeners() {
     debugBtn.addEventListener('click', debugTranscription);
     fullTestBtn.addEventListener('click', testFullTranscription);
     micIndicator.addEventListener('click', toggleListening);
+    
+    // Add test button for wake word detection if it exists
+    const testWakeWordBtn = document.getElementById('test-wakeword-btn');
+    if (testWakeWordBtn) {
+        testWakeWordBtn.addEventListener('click', testWakeWordDetection);
+    }
 }
 
 function updateStatusIndicators() {
@@ -206,10 +262,15 @@ function scrollToBottom() {
 }
 
 function addMessage(content, type = 'system') {
+    console.log('📝 Adding message to frontend:', content, 'Type:', type);
+    console.log('📝 Conversation element exists:', !!conversationEl);
+    
     const messageEl = document.createElement('div');
     messageEl.className = `message ${type}`;
     messageEl.textContent = content;
     conversationEl.appendChild(messageEl);
+    
+    console.log('📝 Message added to DOM');
     
     // Scroll to bottom immediately
     scrollToBottom();
@@ -314,11 +375,21 @@ ipcRenderer.on('stop-audio-capture', () => {
 });
 
 ipcRenderer.on('wake-word-detected', (event, detection) => {
-    console.log('Wake word detected:', detection);
-    addMessage(`🎉 Wake word "${detection.label}" detected!`, 'system');
-    setListeningState(true);
-    // Start audio capture when wake word is detected
-    startAudioCapture();
+    console.log('🎉 FRONTEND: Wake word detected event received!');
+    console.log('🎉 FRONTEND: Event object:', event);
+    console.log('🎉 FRONTEND: Detection data:', detection);
+    console.log('🎉 FRONTEND: Detection type:', detection.type);
+    console.log('🎉 FRONTEND: Detection label:', detection.label);
+    console.log('🎉 FRONTEND: Detection score:', detection.score);
+    
+    try {
+        addMessage(`🎉 Wake word "${detection.label}" detected!`, 'system');
+        setListeningState(true);
+        console.log('✅ FRONTEND: Successfully processed wake word detection');
+    } catch (error) {
+        console.error('❌ FRONTEND: Error processing wake word detection:', error);
+    }
+    // Audio capture is already running for wake word detection
 });
 
 ipcRenderer.on('wake-word-cooldown', (event, data) => {
@@ -349,8 +420,7 @@ ipcRenderer.on('transcription-final', (event, data) => {
         interimMessage.remove();
     }
     addMessage(data.transcript, 'user');
-    // Stop audio capture when transcription is final
-    stopAudioCapture();
+    // Don't stop audio capture - keep it running for wake word detection
 });
 
 ipcRenderer.on('chatgpt-response', (event, data) => {

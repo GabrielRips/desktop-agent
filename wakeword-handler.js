@@ -7,6 +7,7 @@ class WakeWordHandler {
         this.pythonProcess = null;
         this.isRunning = false;
         this.onDetectionCallback = null;
+        this.audioCapture = null;
         console.log('✅ WakeWordHandler initialized');
     }
 
@@ -89,9 +90,28 @@ class WakeWordHandler {
             console.log('📋 Command:', pythonPath, scriptPath);
             console.log('📁 Working directory:', __dirname);
             
+            // Set up environment variables for virtual environment
+            const env = { ...process.env };
+            
+            // If using virtual environment Python, set up the environment
+            if (pythonPath.includes('venv')) {
+                const venvScriptsPath = process.platform === 'win32' 
+                    ? path.join(__dirname, 'venv', 'Scripts')
+                    : path.join(__dirname, 'venv', 'bin');
+                
+                // Add venv Scripts/bin to PATH
+                env.PATH = `${venvScriptsPath}${path.delimiter}${env.PATH}`;
+                env.VIRTUAL_ENV = path.join(__dirname, 'venv');
+                
+                console.log('🔧 Virtual environment activated:');
+                console.log('   VIRTUAL_ENV:', env.VIRTUAL_ENV);
+                console.log('   PATH includes:', venvScriptsPath);
+            }
+            
             this.pythonProcess = spawn(pythonPath, [scriptPath], {
                 stdio: ['pipe', 'pipe', 'pipe'],
-                cwd: __dirname
+                cwd: __dirname,
+                env: env
             });
             console.log('✅ Python process spawned successfully');
             console.log('📊 Process PID:', this.pythonProcess.pid);
@@ -100,38 +120,50 @@ class WakeWordHandler {
                 const output = data.toString().trim();
                 console.log('📤 Python stdout:', output);
                 
-                // Try to parse JSON output from the Python script
-                try {
-                    const detection = JSON.parse(output);
-                    console.log('📋 Parsed JSON:', detection);
-                    if (detection.type === 'wake_word_detected') {
-                        console.log(`🎉 Wake word detected: ${detection.label} (score: ${detection.score})`);
-                        if (this.onDetectionCallback) {
-                            console.log('📞 Calling detection callback...');
-                            this.onDetectionCallback(detection);
-                        } else {
-                            console.log('⚠️ No detection callback set');
-                        }
-                    }
-                } catch (e) {
-                    console.log('📝 Not JSON, checking for detection message...');
-                    // If not JSON, check if it's a wake word detection message
-                    if (output.includes('WAKE WORD DETECTED:')) {
-                        console.log('🎉 Python wake word detection:', output);
-                        // Extract label and score from the message
-                        const match = output.match(/WAKE WORD DETECTED: (\w+) \(score: ([\d.]+)\)/);
-                        if (match) {
-                            const detection = {
-                                type: 'wake_word_detected',
-                                label: match[1],
-                                score: parseFloat(match[2]),
-                                timestamp: Date.now()
-                            };
-                            console.log('📋 Parsed detection:', detection);
+                // Split output by lines to handle multiple messages
+                const lines = output.split('\n');
+                
+                for (const line of lines) {
+                    if (!line.trim()) continue; // Skip empty lines
+                    
+                    console.log('🔍 Processing line:', line);
+                    
+                    // Try to parse JSON output from the Python script
+                    try {
+                        const detection = JSON.parse(line);
+                        console.log('📋 Parsed JSON:', detection);
+                        if (detection.type === 'wake_word_detected') {
+                            console.log(`🎉 Wake word detected from JSON: ${detection.label} (score: ${detection.score})`);
                             if (this.onDetectionCallback) {
-                                console.log('📞 Calling detection callback...');
+                                console.log('📞 Calling detection callback from JSON...');
                                 this.onDetectionCallback(detection);
+                            } else {
+                                console.log('⚠️ No detection callback set');
                             }
+                        }
+                    } catch (e) {
+                        // If not JSON, check if it's a wake word detection message
+                        if (line.includes('WAKE WORD DETECTED:')) {
+                            console.log('🎉 Python wake word detection message:', line);
+                            // Extract label and score from the message
+                            const match = line.match(/WAKE WORD DETECTED: (\w+) \(score: ([\d.]+)\)/);
+                            if (match) {
+                                const detection = {
+                                    type: 'wake_word_detected',
+                                    label: match[1],
+                                    score: parseFloat(match[2]),
+                                    timestamp: Date.now()
+                                };
+                                console.log('📋 Parsed detection from text:', detection);
+                                if (this.onDetectionCallback) {
+                                    console.log('📞 Calling detection callback from text...');
+                                    this.onDetectionCallback(detection);
+                                }
+                            } else {
+                                console.log('⚠️ Could not parse wake word detection message:', line);
+                            }
+                        } else {
+                            console.log('📝 Other Python output:', line);
                         }
                     }
                 }
@@ -152,11 +184,35 @@ class WakeWordHandler {
             });
 
             console.log('✅ All event listeners set up successfully');
-            console.log('🎧 Python script should now be listening for wake words...');
+            console.log('🎧 Python script should now be listening for audio data...');
 
         } catch (error) {
             console.error('❌ Failed to start wake word detection:', error);
             this.isRunning = false;
+        }
+    }
+
+    // Method to send audio data to Python script
+    sendAudioData(audioBuffer) {
+        if (!this.isRunning || !this.pythonProcess) {
+            console.log('⚠️ Wake word detection not running, cannot send audio data');
+            return;
+        }
+
+        try {
+            // Convert ArrayBuffer to Buffer
+            const buffer = Buffer.from(audioBuffer);
+            
+            // Send 4-byte length followed by audio data
+            const lengthBuffer = Buffer.alloc(4);
+            lengthBuffer.writeUInt32LE(buffer.length, 0);
+            
+            this.pythonProcess.stdin.write(lengthBuffer);
+            this.pythonProcess.stdin.write(buffer);
+            
+            console.log(`📤 Sent audio data: ${buffer.length} bytes`);
+        } catch (error) {
+            console.error('❌ Error sending audio data:', error);
         }
     }
 

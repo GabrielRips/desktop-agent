@@ -76,6 +76,45 @@ cp .env.example .env
 nano .env  # or use your preferred editor
 ```
 
+### 3. Python Virtual Environment Setup
+
+The app uses a Python virtual environment to manage dependencies. If you're having issues with Python packages not being found:
+
+#### Windows Setup
+```cmd
+# Run the Windows setup script
+setup-python.bat
+```
+
+#### macOS/Linux Setup
+```bash
+# Run the bash setup script
+./setup-python.sh
+```
+
+#### Manual Virtual Environment Setup
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# Windows:
+venv\Scripts\activate
+# macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+#### Test Virtual Environment
+```bash
+# Test that the virtual environment is working correctly
+npm run test-venv
+```
+
+This will verify that all required Python packages (pyaudio, numpy, openwakeword) can be imported successfully.
+
 ## Usage
 
 ### Development Mode
@@ -121,6 +160,25 @@ If you encounter Python-related errors:
 1. Ensure Python is installed and accessible from command line
 2. Install the required Python packages: `pip install -r requirements.txt`
 3. On Windows, you may need to install PyAudio wheel: `pip install pipwin && pipwin install pyaudio`
+
+### Virtual Environment Issues
+
+If the Electron app can't find Python packages or you get import errors:
+
+1. **Test the virtual environment**: Run `npm run test-venv` to verify all packages are accessible
+2. **Recreate the virtual environment**: Delete the `venv` folder and run the setup script again
+3. **Check Python path**: Ensure the app is using the virtual environment's Python executable
+4. **Manual activation**: Try manually activating the virtual environment and running the Python script:
+   ```bash
+   # Windows
+   venv\Scripts\activate
+   python wakeword_detector.py
+   
+   # macOS/Linux
+   source venv/bin/activate
+   python wakeword_detector.py
+   ```
+5. **Check console logs**: Look for virtual environment activation messages in the Electron console
 
 ### Audio Issues
 
