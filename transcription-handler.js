@@ -8,6 +8,12 @@ class TranscriptionHandler {
         this.isConnected = false;
         this.onTranscriptCallback = null;
         this.onErrorCallback = null;
+        
+        // Speech completion delay settings
+        this.speechCompletionDelay = 3000; // 3 second delay before considering speech complete
+        this.speechCompletionTimer = null;
+        this.lastFinalTranscript = null;
+        this.accumulatedTranscript = '';
     }
 
     initialize(apiKey) {
@@ -26,7 +32,7 @@ class TranscriptionHandler {
         }
     }
 
-    startTranscription(onTranscript, onError) {
+    startTranscription(onTranscript, onError, onDelayUpdate = null) {
         if (!this.deepgramClient) {
             console.error('❌ Deepgram client not initialized');
             return false;
@@ -39,6 +45,7 @@ class TranscriptionHandler {
 
         this.onTranscriptCallback = onTranscript;
         this.onErrorCallback = onError;
+        this.onDelayUpdateCallback = onDelayUpdate;
 
         try {
             console.log('🎤 Starting Deepgram transcription...');
@@ -82,11 +89,20 @@ class TranscriptionHandler {
                         console.log(`📝 [${isFinal ? 'FINAL' : 'INTERIM'}]: ${transcript}`);
                         
                         if (this.onTranscriptCallback) {
-                            this.onTranscriptCallback({
-                                transcript: transcript.trim(),
-                                isFinal: isFinal,
-                                confidence: data.channel.alternatives[0].confidence
-                            });
+                            if (isFinal) {
+                                // Handle final transcript with delay
+                                this.handleFinalTranscript({
+                                    transcript: transcript.trim(),
+                                    confidence: data.channel.alternatives[0].confidence
+                                });
+                            } else {
+                                // Send interim results immediately
+                                this.onTranscriptCallback({
+                                    transcript: transcript.trim(),
+                                    isFinal: false,
+                                    confidence: data.channel.alternatives[0].confidence
+                                });
+                            }
                         }
                     }
                 }
@@ -137,10 +153,79 @@ class TranscriptionHandler {
     stopTranscription() {
         console.log('🛑 Stopping Deepgram transcription...');
         this.isConnected = false;
+        
+        // If there's a pending final transcript, trigger it immediately when stopping
+        if (this.speechCompletionTimer && this.lastFinalTranscript && this.onTranscriptCallback) {
+            console.log('🏃‍♂️ Triggering pending final transcript before stopping');
+            clearTimeout(this.speechCompletionTimer);
+            this.onTranscriptCallback({
+                transcript: this.accumulatedTranscript,
+                isFinal: true,
+                confidence: this.lastFinalTranscript.confidence
+            });
+        }
+        
         this.cleanup();
     }
 
+    handleFinalTranscript(transcriptData) {
+        console.log('⏰ Handling final transcript with delay:', transcriptData.transcript);
+        
+        // Check if this is a continuation of speech (timer was already running)
+        const isContinuation = this.speechCompletionTimer !== null;
+        
+        // Clear any existing timer
+        if (this.speechCompletionTimer) {
+            clearTimeout(this.speechCompletionTimer);
+        }
+        
+        // Update accumulated transcript
+        if (transcriptData.transcript.trim() !== '') {
+            this.accumulatedTranscript = transcriptData.transcript;
+            this.lastFinalTranscript = transcriptData;
+        }
+        
+        // Send appropriate event to main process for UI updates
+        if (isContinuation && this.onDelayUpdateCallback) {
+            this.onDelayUpdateCallback('continue', { transcript: this.accumulatedTranscript });
+        } else if (this.onDelayUpdateCallback) {
+            this.onDelayUpdateCallback('start', { transcript: this.accumulatedTranscript });
+        }
+        
+        // Set a timer to wait for more speech
+        this.speechCompletionTimer = setTimeout(() => {
+            console.log('✅ Speech completion delay expired, triggering final transcript');
+            
+            if (this.lastFinalTranscript && this.onTranscriptCallback) {
+                // Send the accumulated final transcript
+                this.onTranscriptCallback({
+                    transcript: this.accumulatedTranscript,
+                    isFinal: true,
+                    confidence: this.lastFinalTranscript.confidence
+                });
+                
+                // Reset state
+                this.accumulatedTranscript = '';
+                this.lastFinalTranscript = null;
+            }
+            
+            this.speechCompletionTimer = null;
+        }, this.speechCompletionDelay);
+        
+        console.log(`⏱️ Started ${this.speechCompletionDelay}ms delay timer for speech completion`);
+    }
+
     cleanup() {
+        // Clear speech completion timer
+        if (this.speechCompletionTimer) {
+            clearTimeout(this.speechCompletionTimer);
+            this.speechCompletionTimer = null;
+        }
+        
+        // Reset transcript state
+        this.accumulatedTranscript = '';
+        this.lastFinalTranscript = null;
+        
         if (this.keepAliveInterval) {
             clearInterval(this.keepAliveInterval);
             this.keepAliveInterval = null;
@@ -152,6 +237,17 @@ class TranscriptionHandler {
             }
             this.deepgramConnection = null;
         }
+    }
+
+    setSpeechCompletionDelay(delayMs) {
+        if (delayMs > 0) {
+            this.speechCompletionDelay = delayMs;
+            console.log(`⚙️ Speech completion delay set to ${delayMs}ms`);
+        }
+    }
+
+    getSpeechCompletionDelay() {
+        return this.speechCompletionDelay;
     }
 
     isTranscriptionActive() {

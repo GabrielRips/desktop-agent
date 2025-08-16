@@ -23,7 +23,7 @@ class ChatGPTHandler {
         }
     }
 
-    async sendMessage(message, onResponse, onError) {
+    async sendMessage(message, onResponse, onError, screenshotBase64 = null) {
         if (!this.openai) {
             console.error('❌ OpenAI client not initialized');
             if (onError) onError('OpenAI client not initialized');
@@ -32,23 +32,56 @@ class ChatGPTHandler {
 
         try {
             console.log('🤖 Sending message to ChatGPT:', message);
+            console.log('📸 Screenshot included:', !!screenshotBase64);
+
+            // Prepare user message content
+            let userContent;
+            
+            if (screenshotBase64) {
+                // If screenshot is provided, use vision format
+                userContent = [
+                    {
+                        type: "text",
+                        text: `Here's what I'm seeing on my screen along with my voice command: "${message}". Please help me based on both the visual context and my request.`
+                    },
+                    {
+                        type: "image_url",
+                        image_url: {
+                            url: `data:image/png;base64,${screenshotBase64}`
+                        }
+                    }
+                ];
+            } else {
+                // Text only
+                userContent = message;
+            }
 
             // Add user message to history
-            this.addToHistory('user', message);
+            this.addToHistory('user', screenshotBase64 ? `[Voice + Screenshot]: ${message}` : message);
 
             // Prepare messages for API call
             const messages = [
                 {
                     role: "system",
-                    content: "You are a helpful AI assistant. Provide concise, helpful responses."
+                    content: screenshotBase64 ? 
+                        "You are an AI automation assistant with vision capabilities. Analyze the screenshot and voice command to generate PRECISE, CLEAR automation instructions for macOS. \n\nYour response should be specific instructions that describe exactly what needs to be automated based on what you see in the screenshot and the user's voice command.\n\nFocus on:\n1. Identifying the current application and context from the screenshot\n2. Understanding the user's intent from their voice command\n3. Providing clear, step-by-step automation instructions\n4. Being specific about file paths, URLs, and actions\n5. Mentioning the specific application and UI elements visible\n\nExamples:\n- User sees GitHub repo + says 'clone this': 'I can see a GitHub repository page open in Brave browser. Please automate cloning this repository: extract the repository URL from the current browser tab, add .git extension if needed, open Terminal, navigate to ~/Desktop/projects/, and execute the git clone command.'\n- User sees form + says 'fill this': 'I can see a form with multiple input fields on the current webpage. Please automate filling out this form with appropriate test data for each visible field.'\n\nProvide clear, actionable instructions that an automation system can understand and execute." :
+                        "You are a helpful AI assistant. Provide concise, helpful responses."
                 },
-                ...this.conversationHistory
+                ...this.conversationHistory.slice(-8), // Use fewer history items for vision calls to save tokens
+                {
+                    role: "user",
+                    content: userContent
+                }
             ];
 
+            // Use GPT-4 Vision model if screenshot is provided
+            const model = screenshotBase64 ? "gpt-4o" : "gpt-4o-mini";
+            const maxTokens = screenshotBase64 ? 800 : 500; // More tokens for vision responses
+
             const completion = await this.openai.chat.completions.create({
-                model: "gpt-4o-mini",
+                model: model,
                 messages: messages,
-                max_tokens: 500,
+                max_tokens: maxTokens,
                 temperature: 0.7
             });
 

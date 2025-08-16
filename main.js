@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, desktopCapturer } = require('electron');
 const path = require('path');
 const dotenv = require('dotenv');
 
@@ -9,31 +9,44 @@ dotenv.config();
 const WakeWordHandler = require('./wakeword-handler');
 const TranscriptionHandler = require('./transcription-handler');
 const ChatGPTHandler = require('./chatgpt-handler');
+const AgentExecutor = require('./agent-executor');
 
 // Global variables
 let mainWindow;
 let wakeWordHandler;
 let transcriptionHandler;
 let chatGPTHandler;
+let agentExecutor;
 
 // State
 let isAgentRunning = false;
 let isListening = false;
 let currentTranscript = '';
 let lastWakeWordTime = 0;
+let lastScreenshot = null; // Store the most recent screenshot
 const WAKE_WORD_COOLDOWN = 3000; // 3 seconds cooldown
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 800,
-        height: 600,
+        width: 320,
+        height: 180,
+        x: 50, // Position near top-left of screen
+        y: 50,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false,
             enableRemoteModule: true
         },
-        icon: path.join(__dirname, 'icon.png'), // Optional: add an icon
-        show: false
+        frame: false, // Remove window frame for clean look
+        transparent: true, // Enable transparency
+        alwaysOnTop: true, // Keep on top of all windows
+        resizable: false, // Fixed size
+        skipTaskbar: true, // Don't show in taskbar
+        focusable: true, // Can receive focus
+        show: false,
+        backgroundColor: '#00000040', // Semi-transparent background
+        vibrancy: 'dark', // macOS vibrancy effect
+        visualEffectState: 'active'
     });
 
     mainWindow.loadFile('index.html');
@@ -52,7 +65,7 @@ function createWindow() {
     });
 }
 
-function initializeHandlers() {
+async function initializeHandlers() {
     console.log('🔧 Initializing handlers...');
 
     // Initialize wake word handler
@@ -67,6 +80,9 @@ function initializeHandlers() {
         console.error('❌ Failed to initialize Deepgram');
         mainWindow.webContents.send('error', 'Failed to initialize Deepgram. Check your API key.');
     } else {
+        // Set speech completion delay (configurable, default is 3000ms)
+        const speechDelay = process.env.SPEECH_COMPLETION_DELAY || 3000;
+        transcriptionHandler.setSpeechCompletionDelay(parseInt(speechDelay));
         console.log('✅ Deepgram initialized successfully');
     }
 
@@ -82,7 +98,46 @@ function initializeHandlers() {
         console.log('✅ OpenAI initialized successfully');
     }
 
+    // Initialize Agent Executor
+    agentExecutor = new AgentExecutor();
+    if (!(await agentExecutor.initialize())) {
+        console.error('❌ Failed to initialize Agent Executor');
+        mainWindow.webContents.send('error', 'Failed to initialize automation executor. Check your setup.');
+    } else {
+        console.log('✅ Agent Executor initialized successfully');
+    }
+
     console.log('✅ Handlers initialized');
+}
+
+async function captureScreenshot() {
+    try {
+        console.log('📸 Capturing screenshot...');
+        mainWindow.webContents.send('screenshot-capturing');
+        
+        const sources = await desktopCapturer.getSources({
+            types: ['screen'],
+            thumbnailSize: { width: 1920, height: 1080 }
+        });
+        
+        if (sources.length === 0) {
+            throw new Error('No screen sources found');
+        }
+        
+        // Use the primary screen (first source)
+        const screenshot = sources[0].thumbnail;
+        const base64Data = screenshot.toDataURL().split(',')[1]; // Remove data:image/png;base64, prefix
+        
+        lastScreenshot = base64Data;
+        console.log('✅ Screenshot captured successfully');
+        mainWindow.webContents.send('screenshot-captured');
+        
+        return base64Data;
+    } catch (error) {
+        console.error('❌ Error capturing screenshot:', error);
+        mainWindow.webContents.send('screenshot-error', error.message);
+        return null;
+    }
 }
 
 function startAgent() {
@@ -126,8 +181,17 @@ function startAgent() {
         }
         
         console.log('🚀 Starting transcription after wake word detection...');
-        // Start listening for speech
-        startListening();
+        
+        // Capture screenshot when wake word is detected
+        captureScreenshot().then(() => {
+            console.log('📸 Screenshot captured, starting transcription...');
+            // Start listening for speech
+            startListening();
+        }).catch((error) => {
+            console.error('❌ Screenshot capture failed, continuing with audio only:', error);
+            // Start listening for speech even if screenshot fails
+            startListening();
+        });
     });
 
     // Start audio capture immediately for wake word detection
@@ -177,29 +241,95 @@ function startListening() {
     console.log('🔧 Starting Deepgram transcription handler...');
     // Start Deepgram transcription
     const transcriptionStarted = transcriptionHandler.startTranscription(
-        (transcriptData) => {
+        async (transcriptData) => {
             console.log('📝 Transcription callback received:', transcriptData);
             // Handle transcript updates
             if (transcriptData.isFinal) {
                 console.log('📝 Final transcript:', transcriptData.transcript);
                 mainWindow.webContents.send('transcription-final', transcriptData);
                 
-                // Send to ChatGPT
-                console.log('🤖 Sending to ChatGPT:', transcriptData.transcript);
-                chatGPTHandler.sendMessage(
-                    transcriptData.transcript,
-                    (response) => {
-                        console.log('🤖 ChatGPT response:', response);
-                        mainWindow.webContents.send('chatgpt-response', { response });
-                    },
-                    (error) => {
-                        console.error('❌ ChatGPT error:', error);
-                        mainWindow.webContents.send('chatgpt-response', { error });
-                    }
-                );
+                // Send directly to agent.ts for analysis and execution
+                console.log('🤖 Sending directly to agent.ts:', transcriptData.transcript);
+                console.log('📸 Screenshot available:', !!lastScreenshot);
                 
-                // Stop listening after getting final transcript
-                stopListening();
+                if (agentExecutor && agentExecutor.isReady()) {
+                    console.log('🤖 Executing automation via agent.ts...');
+                    
+                    // Stop transcription while executing to avoid interference
+                    console.log('⏸️ Pausing transcription during automation execution...');
+                    stopListening(); // Use proper stop function to maintain state
+                    
+                    mainWindow.webContents.send('automation-starting', { command: transcriptData.transcript });
+                    
+                    try {
+                        const result = await agentExecutor.executeCommand(transcriptData.transcript, lastScreenshot);
+                        
+                        if (result.success) {
+                            console.log('✅ Agent automation successful:', result.output);
+                            mainWindow.webContents.send('automation-success', { 
+                                command: transcriptData.transcript,
+                                result: result.output 
+                            });
+                            // Also send as chatgpt-response for UI compatibility
+                            mainWindow.webContents.send('chatgpt-response', { response: result.output });
+                        } else {
+                            console.error('❌ Agent automation failed:', result.error);
+                            mainWindow.webContents.send('automation-error', { 
+                                command: transcriptData.transcript,
+                                error: result.error 
+                            });
+                            mainWindow.webContents.send('chatgpt-response', { error: result.error });
+                        }
+                        
+                        // Resume transcription after automation completes
+                        console.log('▶️ Resuming transcription after automation...');
+                        setTimeout(() => {
+                            if (isAgentRunning && !isListening) {
+                                console.log('🔄 Restarting listening for next wake word...');
+                                // Don't restart transcription automatically, let wake word trigger it
+                                updateStatus();
+                            }
+                        }, 1000); // Brief delay before resuming
+                    } catch (error) {
+                        console.error('❌ Agent automation error:', error);
+                        mainWindow.webContents.send('automation-error', { 
+                            command: transcriptData.transcript,
+                            error: error.message 
+                        });
+                        mainWindow.webContents.send('chatgpt-response', { error: error.message });
+                        
+                        // Resume transcription after automation error
+                        console.log('▶️ Resuming transcription after automation error...');
+                        setTimeout(() => {
+                            if (isAgentRunning && !isListening) {
+                                console.log('🔄 Ready for next wake word after error...');
+                                // Don't restart transcription automatically, let wake word trigger it
+                                updateStatus();
+                            }
+                        }, 1000); // Brief delay before resuming
+                    }
+                } else {
+                    console.log('ℹ️ Agent executor not ready, falling back to ChatGPT only');
+                    // Fallback to ChatGPT handler if agent executor is not ready
+                    chatGPTHandler.sendMessage(
+                        transcriptData.transcript,
+                        (response) => {
+                            console.log('🤖 ChatGPT fallback response:', response);
+                            mainWindow.webContents.send('chatgpt-response', { response });
+                        },
+                        (error) => {
+                            console.error('❌ ChatGPT fallback error:', error);
+                            mainWindow.webContents.send('chatgpt-response', { error });
+                        },
+                        lastScreenshot
+                    );
+                    
+                    // Stop listening after fallback ChatGPT response
+                    stopListening();
+                }
+                
+                // Clear screenshot after use
+                lastScreenshot = null;
             } else {
                 // Update interim transcript
                 currentTranscript = transcriptData.transcript;
@@ -210,6 +340,16 @@ function startListening() {
             console.error('❌ Transcription error:', error);
             mainWindow.webContents.send('error', `Transcription error: ${error}`);
             stopListening();
+        },
+        (eventType, data) => {
+            // Handle delay events for UI updates
+            if (eventType === 'start') {
+                console.log('⏰ Speech completion delay started');
+                mainWindow.webContents.send('transcription-delay-start', data);
+            } else if (eventType === 'continue') {
+                console.log('🔄 Speech continued, resetting delay');
+                mainWindow.webContents.send('transcription-delay-continue', data);
+            }
         }
     );
 
@@ -264,6 +404,30 @@ ipcMain.on('stop-listening', () => {
     stopListening();
 });
 
+ipcMain.on('minimize-to-tray', () => {
+    if (mainWindow) {
+        mainWindow.hide();
+    }
+});
+
+ipcMain.on('show-widget', () => {
+    if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+    }
+});
+
+ipcMain.on('toggle-widget', () => {
+    if (mainWindow) {
+        if (mainWindow.isVisible()) {
+            mainWindow.hide();
+        } else {
+            mainWindow.show();
+            mainWindow.focus();
+        }
+    }
+});
+
 ipcMain.on('audio-data', (event, audioBuffer) => {
     // Send audio data to wake word detection and transcription
     console.log('📥 Received audio data from renderer, size:', audioBuffer.byteLength);
@@ -290,11 +454,11 @@ ipcMain.on('audio-data', (event, audioBuffer) => {
 });
 
 // App lifecycle
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
     console.log('🚀 Electron app is ready');
     
     createWindow();
-    initializeHandlers();
+    await initializeHandlers();
     
     // Register global shortcuts
     globalShortcut.register('CommandOrControl+Shift+A', () => {
@@ -312,6 +476,18 @@ app.whenReady().then(() => {
             startListening();
         }
     });
+
+    // Global shortcut to show/hide widget
+    globalShortcut.register('CommandOrControl+Shift+W', () => {
+        if (mainWindow) {
+            if (mainWindow.isVisible()) {
+                mainWindow.hide();
+            } else {
+                mainWindow.show();
+                mainWindow.focus();
+            }
+        }
+    });
 });
 
 app.on('window-all-closed', () => {
@@ -326,7 +502,7 @@ app.on('activate', () => {
     }
 });
 
-app.on('will-quit', () => {
+app.on('will-quit', async () => {
     console.log('🛑 App is quitting, cleaning up...');
     
     // Unregister all shortcuts
@@ -339,6 +515,10 @@ app.on('will-quit', () => {
     
     if (transcriptionHandler) {
         transcriptionHandler.stopTranscription();
+    }
+    
+    if (agentExecutor) {
+        await agentExecutor.cleanup();
     }
     
     console.log('✅ Cleanup completed');
