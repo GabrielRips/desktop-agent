@@ -7,7 +7,7 @@ import os
 import struct
 
 class WakeWordDetector:
-    def __init__(self, model_name="alexa_v0.1"):
+    def __init__(self, model_name="hey_rhasspy"):
         print(f"Initializing WakeWordDetector with model: {model_name}", flush=True)
         
         # Get the path to the custom model file  
@@ -31,6 +31,7 @@ class WakeWordDetector:
         else:
             print(f"Custom model file not found: {model_path}", flush=True)
             print("Falling back to built-in models with TFLite...", flush=True)
+            # Use built-in models that might detect "hey" or similar wake words
             self.model = Model(inference_framework="tflite")
             self.model_name = "built-in models"
             print(f"Built-in models loaded successfully with TFLite", flush=True)
@@ -57,6 +58,11 @@ class WakeWordDetector:
             preds_noise = self.model.predict(test_noise)
             print(f"Model test with noise predictions: {preds_noise}", flush=True)
             
+            # Show available wake words
+            print("Available wake words in model:", flush=True)
+            for label in preds.keys():
+                print(f"  - {label}", flush=True)
+            
             return True
         except Exception as e:
             print(f"Model test failed: {e}", flush=True)
@@ -74,23 +80,27 @@ class WakeWordDetector:
             # Check for detection above 0.5
             for label, score in preds.items():
                 if score >= 0.5:
-                    detection_msg = {
-                        "type": "wake_word_detected",
-                        "label": label,
-                        "score": float(score),
-                        "timestamp": time.time()
-                    }
-                    
-                    # Print human-readable message for debugging
-                    print(f"WAKE WORD DETECTED: {label} (score: {score:.2f})", flush=True)
-                    
-                    # Send clean JSON on a separate line for Electron to capture
-                    # Use sys.stdout.write to avoid any extra formatting
-                    json_str = json.dumps(detection_msg)
-                    sys.stdout.write(json_str + '\n')
-                    sys.stdout.flush()
-                    
-                    return True
+                    # Map common wake word detections to "hey rhasspy"
+                    # Built-in models might detect "hey", "hey google", "hey siri", etc.
+                    # We'll map these to our desired wake word
+                    if any(keyword in label.lower() for keyword in ['hey', 'rhasspy', 'wake']):
+                        detection_msg = {
+                            "type": "wake_word_detected",
+                            "label": "hey rhasspy",
+                            "score": float(score),
+                            "timestamp": time.time()
+                        }
+                        
+                        # Print human-readable message for debugging
+                        print(f"WAKE WORD DETECTED: hey rhasspy (score: {score:.2f})", flush=True)
+                        
+                        # Send clean JSON on a separate line for Electron to capture
+                        # Use sys.stdout.write to avoid any extra formatting
+                        json_str = json.dumps(detection_msg)
+                        sys.stdout.write(json_str + '\n')
+                        sys.stdout.flush()
+                        
+                        return True
             
             return False
                     
