@@ -7,7 +7,7 @@ import os
 import struct
 
 class WakeWordDetector:
-    def __init__(self, model_name="hey_rhasspy"):
+    def __init__(self, model_name="co_brain"):
         print(f"Initializing WakeWordDetector with model: {model_name}", flush=True)
         
         # Get the path to the custom model file  
@@ -80,19 +80,19 @@ class WakeWordDetector:
             # Check for detection above 0.5
             for label, score in preds.items():
                 if score >= 0.5:
-                    # Map common wake word detections to "hey rhasspy"
+                    # Map common wake word detections to "co_brain"
                     # Built-in models might detect "hey", "hey google", "hey siri", etc.
                     # We'll map these to our desired wake word
-                    if any(keyword in label.lower() for keyword in ['hey', 'rhasspy', 'wake']):
+                    if any(keyword in label.lower() for keyword in ['hey', 'rhasspy', 'wake', 'co_brain', 'co brain']):
                         detection_msg = {
                             "type": "wake_word_detected",
-                            "label": "hey rhasspy",
+                            "label": "co_brain",
                             "score": float(score),
                             "timestamp": time.time()
                         }
                         
                         # Print human-readable message for debugging
-                        print(f"WAKE WORD DETECTED: hey rhasspy (score: {score:.2f})", flush=True)
+                        print(f"WAKE WORD DETECTED: co_brain (score: {score:.2f})", flush=True)
                         
                         # Send clean JSON on a separate line for Electron to capture
                         # Use sys.stdout.write to avoid any extra formatting

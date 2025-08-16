@@ -61,7 +61,7 @@ function initializeUI() {
     console.log('✅ Audio capture initialized in renderer');
     
     // Add initial message
-    addMessage('Say "Hey Rhasspy" to activate the agent, then speak your question or request.', 'system');
+    addMessage('Say "Co Brain" to activate the agent, then speak your question or request.', 'system');
     console.log('✅ UI initialization complete');
 }
 
@@ -111,7 +111,7 @@ function debugTranscription() {
     console.log('🔍 Debugging transcription flow...');
     
     // Simulate wake word detection
-    addMessage('🎉 Wake word "hey rhasspy" detected!', 'system');
+    addMessage('🎉 Wake word "co_brain" detected!', 'system');
     setListeningState(true);
     
     // Simulate transcription updates
@@ -151,7 +151,7 @@ function testFullTranscription() {
     
     // Simulate wake word detection
     setTimeout(() => {
-        addMessage('🎉 Wake word "hey rhasspy" detected!', 'system');
+        addMessage('🎉 Wake word "co_brain" detected!', 'system');
         setListeningState(true);
     }, 500);
     
@@ -195,7 +195,7 @@ function testWakeWordDetection() {
     // Simulate the exact same event that would be sent from main process
     const testDetection = {
         type: 'wake_word_detected',
-        label: 'hey rhasspy',
+        label: 'co_brain',
         score: 0.85,
         timestamp: Date.now()
     };
@@ -336,7 +336,7 @@ function stopAgent() {
 
 function clearConversation() {
     conversationEl.innerHTML = '';
-    addMessage('Say "Hey Rhasspy" to activate the agent, then speak your question or request.', 'system');
+    addMessage('Say "Co Brain" to activate the agent, then speak your question or request.', 'system');
 }
 
 function toggleListening() {
@@ -355,7 +355,7 @@ function toggleListening() {
 // IPC event listeners
 ipcRenderer.on('agent-started', () => {
     isAgentRunning = true;
-    addMessage('Agent started successfully! Say "Hey Rhasspy" to activate.', 'system');
+    addMessage('Agent started successfully! Say "Co Brain" to activate.', 'system');
 });
 
 ipcRenderer.on('agent-stopped', () => {

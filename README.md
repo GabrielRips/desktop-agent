@@ -4,7 +4,7 @@ A barebones Electron desktop agent that detects wake words, transcribes speech w
 
 ## Features
 
-- 🎧 **Wake Word Detection**: Uses openwakeword to detect "Hey Rhasspy" wake word
+- 🎧 **Wake Word Detection**: Uses openwakeword to detect "Co Brain" wake word
 - 🎤 **Speech Transcription**: Real-time transcription using Deepgram's Nova-3 model
 - 🤖 **ChatGPT Integration**: Sends transcriptions to ChatGPT and displays responses
 - 🖥️ **Modern UI**: Clean, responsive interface with status indicators
@@ -44,7 +44,7 @@ OPENAI_API_KEY=your_openai_api_key_here
 DEEPGRAM_API_KEY=your_deepgram_api_key_here
 
 # Optional: Customize wake word
-WAKE_WORD_MODEL=hey_rhasspy
+WAKE_WORD_MODEL=co_brain
 ```
 
 ### 3. Get API Keys
@@ -138,7 +138,7 @@ npm start
 
 ## How It Works
 
-1. **Wake Word Detection**: The app continuously listens for the "Hey Rhasspy" wake word using openwakeword
+1. **Wake Word Detection**: The app continuously listens for the "Co Brain" wake word using openwakeword
 2. **Speech Transcription**: When the wake word is detected, it starts recording and transcribing speech using Deepgram
 3. **ChatGPT Processing**: The final transcription is sent to ChatGPT for processing
 4. **Response Display**: ChatGPT's response is displayed in the conversation interface
@@ -146,7 +146,7 @@ npm start
 ## Workflow
 
 1. Click "Start Agent" or use the global shortcut
-2. Say "Hey Rhasspy" to activate the agent
+2. Say "Co Brain" to activate the agent
 3. Speak your question or request
 4. Wait for ChatGPT's response
 5. The conversation history is maintained in the interface
@@ -194,7 +194,7 @@ If the Electron app can't find Python packages or you get import errors:
 
 ### Wake Word Detection
 
-- The default wake word is "Hey Rhasspy"
+- The default wake word is "Co Brain"
 - Speak clearly and at a normal volume
 - Reduce background noise for better detection
 - The detection threshold is set to 0.5 (50% confidence)
@@ -204,7 +204,7 @@ If the Electron app can't find Python packages or you get import errors:
 ### Changing the Wake Word
 
 Edit the `WAKE_WORD_MODEL` in your `.env` file. Available models include:
-- `hey_rhasspy`
+- `co_brain`
 - `hey_jarvis_v0.1`
 - `hey_siri_v0.1`
 - `hey_google_v0.1`
