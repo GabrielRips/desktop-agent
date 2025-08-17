@@ -36,9 +36,22 @@ This desktop agent requires two API keys to function properly:
    # Replace the placeholder values with your actual API keys
    OPENAI_API_KEY=sk-your-actual-openai-key-here
    DEEPGRAM_API_KEY=your-actual-deepgram-key-here
+   
+   # Optional: Adjust speech completion delay (default: 3000ms)
+   # This controls how long to wait after speech stops before executing automation
+   # Increase for more time to continue speaking, decrease for faster response
+   SPEECH_COMPLETION_DELAY=3000
    ```
 
 2. **Save the file** and restart the application
+
+## Optional Settings
+
+### Speech Completion Delay
+- **Purpose**: Controls the pause duration after speech detection stops before automation executes
+- **Default**: 3000ms (3 seconds) 
+- **Recommended range**: 2000-5000ms depending on your speaking pace
+- **Usage**: Add `SPEECH_COMPLETION_DELAY=4000` to `.env` for a 4-second delay
 
 ## Troubleshooting
 

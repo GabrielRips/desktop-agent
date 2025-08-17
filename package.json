@@ -16,7 +16,12 @@
   "license": "MIT",
   "dependencies": {
     "@deepgram/sdk": "^4.5.1",
+    "@openai/agents": "^0.0.17",
+    "@openai/agents-openai": "^0.0.17",
     "dotenv": "^16.4.5",
     "openai": "^4.28.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.4"
   }
-} 
+}
