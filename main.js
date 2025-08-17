@@ -17,9 +17,58 @@ function detectIntent(text) {
     const lowerText = text.toLowerCase().trim();
     console.log('🔍 Main detectIntent called with:', lowerText);
     
-    // Question patterns
+    // SPECIAL CASE: Conversational statements should be ignored
+    console.log('🔍 Checking conversational patterns for:', `"${lowerText}"`);
+    
+    const conversationalPatterns = [
+        /tell\s+(him|her|them|someone)/,  // Removed ^ to be more flexible
+        /let\s+(him|her|them|someone)\s+know/,
+        /(i'?ll|ill)\s+(talk|speak)\s+to/,
+        /(i'?ll|ill)\s+call/,
+        /(i'?ll|ill)\s+see/,
+        /(i'?ll|ill)\s+reply/,
+        /(i'?ll|ill)\s+get\s+back/,
+        /(i'?ll|ill)\s+respond/,
+        /(i'?ll|ill)\s+message/,
+        /(i'?ll|ill)\s+text/
+    ];
+    
+    const isConversational = conversationalPatterns.some((pattern, index) => {
+        const matches = pattern.test(lowerText);
+        console.log(`  Pattern ${index + 1}: ${pattern} -> ${matches ? 'MATCH' : 'no match'}`);
+        return matches;
+    });
+    
+    if (isConversational) {
+        console.log('✅ Conversational statement detected - ignoring:', lowerText);
+        return 'ignore';
+    } else {
+        console.log('❌ No conversational patterns matched for:', lowerText);
+    }
+    
+    // SPECIAL CASE: Error-related questions should be treated as actions for Cursor AI
+    const errorPatterns = [
+        /error/,
+        /bug/,
+        /issue/,
+        /problem/,
+        /fix\s+this/,
+        /what.*wrong/,
+        /why.*not\s+work/,
+        /debug/,
+        /broken/,
+        /exception/,
+        /crash/
+    ];
+    
+    const isErrorRelated = errorPatterns.some(pattern => pattern.test(lowerText));
+    if (isErrorRelated) {
+        console.log('🔧 Error-related query detected - routing as ACTION for Cursor handling');
+        return 'action';
+    }
+    
+    // Question patterns (for general questions only)
     const questionPatterns = [
-        /^what(\s+is|\s+are|\s+was|\s+were|\s+does|\s+do|\s+did|\s+'s)/,
         /^how(\s+do|\s+does|\s+did|\s+can|\s+to|\s+much|\s+many)/,
         /^why(\s+is|\s+are|\s+do|\s+does|\s+did)/,
         /^when(\s+is|\s+are|\s+was|\s+were|\s+do|\s+does|\s+did)/,
@@ -47,7 +96,7 @@ function detectIntent(text) {
         /^(delete|remove|clear)/,
         /^(create|make|new)/,
         /^(find|search|look)/,
-        /^(clone|git)/,
+        /^(clone|git|pull|fetch|checkout)/,
         /^(take\s+a?\s?screenshot|screenshot)/,
         /browser|window|application|app|terminal|finder/
     ];
@@ -359,6 +408,19 @@ function startListening() {
                 console.log('🎯 Detected intent:', intent, 'for:', transcriptData.transcript);
                 console.log('📸 Screenshot available:', !!lastScreenshot);
                 
+                // Handle ignored conversational statements
+                if (intent === 'ignore') {
+                    console.log('💬 Ignoring conversational statement, resuming listening...');
+                    // Restart listening immediately
+                    setTimeout(() => {
+                        if (isAgentRunning && !isListening) {
+                            startListening();
+                            updateStatus();
+                        }
+                    }, 500);
+                    return;
+                }
+                
                 // Add debug logging for intent detection
                 if (intent === 'question') {
                     console.log('✅ Question detected, taking fast path');
@@ -380,7 +442,7 @@ function startListening() {
                     console.log('🔍 Question analysis:', {
                         hasScreenshot: !!lastScreenshot,
                         willPassScreenshot: !!screenshotToUse,
-                        aiWillDecide: true
+                        directScreenshotAnalysis: true
                     });
                     
                     chatGPTHandler.sendMessage(
@@ -397,6 +459,7 @@ function startListening() {
                             setTimeout(() => {
                                 if (isAgentRunning && !isListening) {
                                     console.log('🔄 Resuming after question response...');
+                                    startListening();
                                     updateStatus();
                                 }
                             }, 1000);
@@ -412,11 +475,12 @@ function startListening() {
                             setTimeout(() => {
                                 if (isAgentRunning && !isListening) {
                                     console.log('🔄 Resuming after question error...');
+                                    startListening();
                                     updateStatus();
                                 }
                             }, 1000);
                         },
-                        screenshotToUse, // Pass screenshot only for screen-specific questions
+                        screenshotToUse, // Pass current screenshot for analysis
                         true  // Explicitly mark as question
                     );
                     
@@ -468,7 +532,7 @@ function startListening() {
                         setTimeout(() => {
                             if (isAgentRunning && !isListening) {
                                 console.log('🔄 Restarting listening for next wake word...');
-                                // Don't restart transcription automatically, let wake word trigger it
+                                startListening();
                                 updateStatus();
                             }
                         }, 1000); // Brief delay before resuming
@@ -485,7 +549,7 @@ function startListening() {
                         setTimeout(() => {
                             if (isAgentRunning && !isListening) {
                                 console.log('🔄 Ready for next wake word after error...');
-                                // Don't restart transcription automatically, let wake word trigger it
+                                startListening();
                                 updateStatus();
                             }
                         }, 1000); // Brief delay before resuming
@@ -518,6 +582,7 @@ function startListening() {
                     setTimeout(() => {
                         if (isAgentRunning && !isListening) {
                             console.log('🔄 Resuming after fallback...');
+                            startListening();
                             updateStatus();
                         }
                     }, 1000);

@@ -36,6 +36,8 @@ async function main() {
       'CRITICAL: First determine if the user input is a QUESTION or an ACTION COMMAND. ' +
       '\n' +
       'INTENT CLASSIFICATION: ' +
+      '- SPECIAL CASE: If user is in Cursor AND mentions error/bug/issue/problem, treat as ACTION (not question) to trigger CMD+SHIFT+D and Enter ' +
+
       '- QUESTIONS: General inquiries, weather, facts, explanations, "what is", "how to", "tell me about" ' +
       '- ACTIONS: Commands to control/manipulate macOS, apps, files, system - anything requiring automation ' +
       '\n' +
@@ -50,11 +52,22 @@ async function main() {
       '- Use MCP tools to understand current system state ' +
       '- Execute the requested automation using macos_automator MCP tools ' +
       '- Be concise and execute immediately without asking confirmation ' +
+      '- If the user asks to OPEN or PULL or FETCH their latest git repo then please go into the ~/Desktop/demo/desktop-agent and pull the latest git from the main branch' +
+      '- The last repo that I worked on was ~/Desktop/demo/desktop-agent' +
+      '- When user says "latest repo" they mean ~/Desktop/demo/desktop-agent' +
+      '- When user says "open it" or "open the repo" they want it opened in Cursor - use: cursor ~/Desktop/demo/desktop-agent' +
+      '- CRITICAL: FOR COMPOUND COMMANDS - Execute each step EXACTLY ONCE, then move to next step. DO NOT REPEAT ACTIONS.' +
+      '- Example: "pull latest repo and open it" = Execute git pull ONCE, then execute cursor command ONCE, then STOP' +
+      '- NEVER repeat the same command multiple times unless explicitly asked to do so' +
+      '- ERROR HANDLING IN CURSOR: If user is in Cursor (check active application) AND asking about an error, press CMD+SHIFT+D then Enter to open AI chat' +
+      '- IF THE USER ASKS TO CLONE A REPO, then take the url from the Brave browser, add .git to the end of the url, THEN ALWAYS CLONE INTO ~/Desktop/' +
       '\n' +
       'AUTOMATION EXAMPLES: ' +
       '- "clone this repo" → Get browser URL, execute git clone automation ' +
       '- "open browser" → Use MCP tools to launch browser application ' +
       '- "close this window" → Use MCP tools to close active window ' +
+      '- "what is this error?" (while in Cursor) → Press CMD+SHIFT+D then Enter to open AI chat ' +
+
       '\n' +
       'QUESTION EXAMPLES: ' +
       '- "what is the weather today" → Provide weather information ' +
@@ -62,10 +75,12 @@ async function main() {
       '- "what time is it" → Provide current time ' +
       '\n' +
       'EXECUTION RULES: ' +
-      '1. Always classify intent first (QUESTION vs ACTION) ' +
-      '2. For actions: use MCP tools, execute once, stop immediately after success ' +
-      '3. For questions: provide helpful response without automation ' +
-      '4. Be concise and focused on the user\'s actual intent',
+      '1. FIRST check if user is in Cursor and mentions error/bug/issue - if yes, classify as ACTION for CMD+SHIFT+D and then Enter' +
+      '2. Otherwise classify intent (QUESTION vs ACTION) ' +
+      '3. For actions: use MCP tools, execute each command EXACTLY ONCE, stop immediately after success ' +
+      '4. For questions: provide helpful response without automation ' +
+      '5. Be concise and focused on the user\'s actual intent ' +
+      '6. NEVER execute the same command multiple times in a row',
     mcpServers: [macosAutomator],
   });
 

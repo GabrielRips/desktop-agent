@@ -31,7 +31,7 @@ class ChatGPTHandler {
         console.log('✅ Screenpipe handler connected to ChatGPT');
     }
 
-    async sendMessage(message, onResponse, onError) {
+    async sendMessage(message, onResponse, onError, screenshotBase64 = null, isQuestion = false) {
         if (!this.openai) {
             console.error('❌ OpenAI client not initialized');
             if (onError) onError('OpenAI client not initialized');
@@ -40,35 +40,64 @@ class ChatGPTHandler {
 
         try {
             console.log('🤖 Sending message to ChatGPT:', message);
+            console.log('📸 Screenshot provided:', !!screenshotBase64);
+            console.log('❓ Is question:', isQuestion);
 
-            // Search for relevant screenpipe context
-            let screenContext = '';
-            if (this.screenpipeHandler && this.screenpipeHandler.isInitialized) {
-                try {
-                    console.log('🔍 Searching for relevant screen context...');
-                    const relevantScreenshots = await this.screenpipeHandler.searchScreenshots(message, 3);
-                    
-                    if (relevantScreenshots && relevantScreenshots.length > 0) {
-                        screenContext = this.buildScreenContext(relevantScreenshots);
-                        console.log('✅ Found relevant screen context');
-                    } else {
-                        console.log('ℹ️ No relevant screen context found');
+            // Prepare user content - prioritize current screenshot over historical search
+            let userContent;
+            let systemPrompt;
+            
+            if (screenshotBase64) {
+                // Current screenshot available - use it directly for analysis
+                console.log('📸 Using current screenshot for analysis');
+                userContent = [
+                    {
+                        type: "text",
+                        text: `The user is asking: "${message}"\n\nI'm providing you with a screenshot of their current screen. Please analyze what's visible and answer their question based on what you can see in the image.`
+                    },
+                    {
+                        type: "image_url",
+                        image_url: {
+                            url: `data:image/png;base64,${screenshotBase64}`
+                        }
                     }
-                } catch (error) {
-                    console.warn('⚠️ Error searching screen context:', error.message);
+                ];
+                systemPrompt = "You are a helpful AI assistant with vision capabilities. Analyze the screenshot and provide helpful answers based on what you can see.";
+            } else {
+                // No current screenshot - fall back to screenpipe search for historical context
+                console.log('🔍 No current screenshot, searching historical screen context...');
+                let screenContext = '';
+                if (this.screenpipeHandler && this.screenpipeHandler.isInitialized) {
+                    try {
+                        const relevantScreenshots = await this.screenpipeHandler.searchScreenshots(message, 3);
+                        if (relevantScreenshots && relevantScreenshots.length > 0) {
+                            screenContext = this.buildScreenContext(relevantScreenshots);
+                            console.log('✅ Found relevant historical screen context');
+                        } else {
+                            console.log('ℹ️ No relevant screen context found');
+                        }
+                    } catch (error) {
+                        console.warn('⚠️ Error searching screen context:', error.message);
+                    }
                 }
+                userContent = `Please answer: "${message}"`;
+                systemPrompt = this.buildSystemPrompt(screenContext);
             }
 
             // Add user message to history
             this.addToHistory('user', message);
 
-            // Prepare messages for API call with screen context
+            // Prepare messages for API call
             const messages = [
                 {
                     role: "system",
-                    content: this.buildSystemPrompt(screenContext)
+                    content: systemPrompt
                 },
-                ...this.conversationHistory
+                ...this.conversationHistory,
+                {
+                    role: "user", 
+                    content: userContent
+                }
             ];
 
             const completion = await this.openai.chat.completions.create({
