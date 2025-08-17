@@ -132,10 +132,10 @@ function initializeUI() {
             }
         }, 500);
     }
-
+    
     // Initialize audio capture
     try {
-        audioCapture = new AudioCapture();
+    audioCapture = new AudioCapture();
         console.log('✅ Audio capture initialized');
     } catch (error) {
         console.error('❌ Audio capture initialization failed:', error);
@@ -555,7 +555,7 @@ ipcRenderer.on('start-audio-capture', async () => {
         
         if (success) {
             console.log('✅ Audio capture started successfully');
-        } else {
+    } else {
             console.error('❌ Failed to start audio capture');
             updateStatus('error', 'Mic Error', 'Could not access microphone');
         }

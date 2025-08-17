@@ -9,6 +9,7 @@ dotenv.config();
 const WakeWordHandler = require('./wakeword-handler');
 const TranscriptionHandler = require('./transcription-handler');
 const ChatGPTHandler = require('./chatgpt-handler');
+const ScreenpipeHandler = require('./screenpipe-handler');
 const AgentExecutor = require('./agent-executor');
 
 // Simple intent detection function
@@ -78,6 +79,7 @@ let mainWindow;
 let wakeWordHandler;
 let transcriptionHandler;
 let chatGPTHandler;
+let screenpipeHandler;
 let agentExecutor;
 
 // State
@@ -172,6 +174,34 @@ async function initializeHandlers() {
         mainWindow.webContents.send('error', 'Failed to initialize OpenAI. Check your API key.');
     } else {
         console.log('✅ OpenAI initialized successfully');
+    }
+
+    // Initialize Screenpipe Handler
+    screenpipeHandler = new ScreenpipeHandler();
+    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
+        console.warn('⚠️ OpenAI API key not configured for screenpipe. Screen analysis will be disabled.');
+        mainWindow.webContents.send('warning', 'OpenAI API key not configured for screenpipe. Screen analysis will be disabled.');
+    } else {
+        screenpipeHandler.initialize(process.env.OPENAI_API_KEY).then((success) => {
+            if (success) {
+                console.log('✅ Screenpipe handler initialized successfully');
+                
+                // Connect screenpipe handler to ChatGPT handler
+                if (chatGPTHandler) {
+                    chatGPTHandler.setScreenpipeHandler(screenpipeHandler);
+                    console.log('✅ Screenpipe context integration enabled');
+                }
+                
+                // Start periodic screenshot capture if enabled
+                if (process.env.SCREENSHOT_CAPTURE_ENABLED === 'true') {
+                    const interval = parseFloat(process.env.SCREENSHOT_CAPTURE_INTERVAL) || 0.083; // 5 seconds default
+                    screenpipeHandler.startPeriodicCapture(interval);
+                }
+            } else {
+                console.error('❌ Failed to initialize screenpipe handler');
+                mainWindow.webContents.send('error', 'Failed to initialize screenpipe handler. Check your OpenAI API key and ensure Qdrant is running.');
+            }
+        });
     }
 
     // Initialize Agent Executor
@@ -745,6 +775,10 @@ app.on('will-quit', async () => {
     
     if (transcriptionHandler) {
         transcriptionHandler.stopTranscription();
+    }
+    
+    if (screenpipeHandler) {
+        await screenpipeHandler.cleanup();
     }
     
     if (agentExecutor) {

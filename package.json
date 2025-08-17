@@ -10,16 +10,20 @@
     "test-venv": "node test-venv.js",
     "test-wakeword": "node test-wakeword-handler.js",
     "test-audio": "node test-audio-device.js",
-    "test-audio-transmission": "node test-audio-transmission.js"
+    "test-audio-transmission": "node test-audio-transmission.js",
+    "test-screenpipe": "node test-screenpipe.js"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
     "@deepgram/sdk": "^4.5.1",
-    "@openai/agents": "^0.0.17",
-    "@openai/agents-openai": "^0.0.17",
+    "@qdrant/js-client-rest": "^1.15.1",
     "dotenv": "^16.4.5",
-    "openai": "^4.28.0"
+    "openai": "^4.28.0",
+    "screenshot-desktop": "^1.15.1",
+    "tesseract.js": "^5.0.4",
+    "sharp": "^0.33.2",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "tsx": "^4.20.4"

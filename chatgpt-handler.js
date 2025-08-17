@@ -6,7 +6,8 @@ class ChatGPTHandler {
     constructor() {
         this.openai = null;
         this.conversationHistory = [];
-        this.maxHistoryLength = 10; // Keep last 10 exchanges
+        this.maxHistoryLength = 10;
+        this.screenpipeHandler = null;
     }
 
     initialize(apiKey) {
@@ -25,7 +26,12 @@ class ChatGPTHandler {
         }
     }
 
-    async sendMessage(message, onResponse, onError, screenshotBase64 = null, isQuestion = false) {
+    setScreenpipeHandler(screenpipeHandler) {
+        this.screenpipeHandler = screenpipeHandler;
+        console.log('✅ Screenpipe handler connected to ChatGPT');
+    }
+
+    async sendMessage(message, onResponse, onError) {
         if (!this.openai) {
             console.error('❌ OpenAI client not initialized');
             if (onError) onError('OpenAI client not initialized');
@@ -33,148 +39,47 @@ class ChatGPTHandler {
         }
 
         try {
-            // Auto-detect if not explicitly provided
-            if (!isQuestion) {
-                isQuestion = this.isQuestionPattern(message);
-            }
-            
-            console.log('🔍 ChatGPT Handler - Question detection:', isQuestion, 'for message:', message);
             console.log('🤖 Sending message to ChatGPT:', message);
-            console.log('📸 Screenshot included:', !!screenshotBase64);
-            console.log('📸 Screenshot length:', screenshotBase64 ? screenshotBase64.length : 0);
 
-            // Detect if we need web search for current information
-            const needsWebSearch = this.needsWebSearch(message);
-            console.log('🌐 Web search needed:', needsWebSearch);
-
-            // Prepare tools array
-            const tools = [];
-            if (needsWebSearch && isQuestion) {
-                tools.push({ type: "web_search_preview" });
-                console.log('🔧 Added web_search_preview tool');
-            }
-
-            // Prepare user message content with enhanced prompting
-            let userContent;
-            
-            if (screenshotBase64) {
-                // Use screenshots for actions OR questions (let AI decide relevance)
-                if (isQuestion) {
-                    // Question with screenshot - let AI determine if screen analysis is needed
-                    userContent = [
-                        {
-                            type: "text",
-                            text: `The user is asking: "${message}"
-
-I'm providing you with a screenshot of their current screen. Please determine if this question requires analyzing what's shown on the screen or if it's a general question that doesn't need screen analysis.
-
-If the question is about what's visible on the screen (like "what is this?", "what do you see?", "what's this error?", etc.), please analyze the screenshot and describe what you see.
-
-If the question is general knowledge (like "who is the president?", "what's the weather?", etc.), please answer the question directly without referencing the screenshot.
-
-Be intelligent about determining which type of question this is and respond accordingly.`
-                        },
-                        {
-                            type: "image_url",
-                            image_url: {
-                                url: `data:image/png;base64,${screenshotBase64}`
-                            }
-                        }
-                    ];
-                    console.log('📸 Using screenshot for question - AI will determine relevance');
-                } else {
-                    // Action request - provide automation instructions
-                    const contextAnalysis = this.getActionAnalysisPrompt(message);
-                    userContent = [
-                        {
-                            type: "text",
-                            text: `${contextAnalysis}\n\nUser's message: "${message}"\n\nPlease analyze this screenshot and provide automation instructions based on the visual context and the user's request.
-                        If the user is asking something specific such as "what does this mean", then please use the screenshot to answer the question, as well as your own knowledge.`
-                    },
-                    {
-                        type: "image_url",
-                        image_url: {
-                            url: `data:image/png;base64,${screenshotBase64}`
-                        }
+            // Search for relevant screenpipe context
+            let screenContext = '';
+            if (this.screenpipeHandler && this.screenpipeHandler.isInitialized) {
+                try {
+                    console.log('🔍 Searching for relevant screen context...');
+                    const relevantScreenshots = await this.screenpipeHandler.searchScreenshots(message, 3);
+                    
+                    if (relevantScreenshots && relevantScreenshots.length > 0) {
+                        screenContext = this.buildScreenContext(relevantScreenshots);
+                        console.log('✅ Found relevant screen context');
+                    } else {
+                        console.log('ℹ️ No relevant screen context found');
                     }
-                ];
-                console.log('📸 Using screenshot for action request');
+                } catch (error) {
+                    console.warn('⚠️ Error searching screen context:', error.message);
                 }
-            } else {
-                // Text only - for questions or actions without screenshots
-                userContent = isQuestion ?
-                    `Please provide a comprehensive answer to: "${message}"${needsWebSearch ? ' Please search the web for the most current information if needed.' : ''}` :
-                    message;
-                console.log(isQuestion ? '❓ Processing as text-only question' : '🤖 Processing as text-only action');
             }
-
-            // Enhanced system prompts for better structure
-            const systemPrompt = this.getEnhancedSystemPrompt(isQuestion, screenshotBase64, needsWebSearch);
 
             // Add user message to history
-            this.addToHistory('user', screenshotBase64 ? `[Voice + Screenshot]: ${message}` : message);
+            this.addToHistory('user', message);
 
-            // Prepare messages for API call
+            // Prepare messages for API call with screen context
             const messages = [
-                { role: "system", content: systemPrompt },
-                ...this.conversationHistory.slice(-6), // Reduced for better performance
-                { role: "user", content: userContent }
+                {
+                    role: "system",
+                    content: this.buildSystemPrompt(screenContext)
+                },
+                ...this.conversationHistory
             ];
 
-            // Use models with built-in web search capabilities for questions
-            let model;
-            if (isQuestion && needsWebSearch) {
-                model = "gpt-4o"; // gpt-4o has built-in web search capabilities
-            } else if (screenshotBase64) {
-                model = "gpt-4o"; // Vision capabilities
-            } else if (isQuestion) {
-                model = "gpt-4o"; // Better reasoning for questions
-            } else {
-                model = "gpt-4o-mini"; // Faster for actions
-            }
-
-            const maxTokens = screenshotBase64 ? 1000 : (isQuestion ? 600 : 500);
-
-            console.log('📡 Sending to OpenAI with model:', model, 'tools:', tools.length > 0 ? tools.map(t => t.type) : 'none');
-            
-            // Create completion parameters
-            const completionParams = {
-                model: model,
+            const completion = await this.openai.chat.completions.create({
+                model: "gpt-4o-mini",
                 messages: messages,
-                max_tokens: maxTokens,
-                temperature: isQuestion ? 0.2 : 0.7,
-                stream: false,
-                top_p: isQuestion ? 0.9 : 1.0
-            };
-
-            // Add tools if needed
-            if (tools.length > 0) {
-                completionParams.tools = tools;
-                completionParams.tool_choice = "auto";
-            }
-
-            console.log('🚀 Making OpenAI API call...');
-            console.log('📋 Completion params:', {
-                model: completionParams.model,
-                hasTools: !!completionParams.tools,
-                messageCount: completionParams.messages.length,
-                lastMessageType: typeof completionParams.messages[completionParams.messages.length - 1].content
+                max_tokens: 500,
+                temperature: 0.7
             });
-            
-            const completion = await this.openai.chat.completions.create(completionParams);
-            console.log('✅ OpenAI API call completed successfully');
 
-            let response = completion.choices[0].message.content || '';
-            console.log('📝 Raw response received, length:', response.length);
-            
-            // Handle tool calls if present
-            if (completion.choices[0].message.tool_calls) {
-                console.log('🔧 Tool calls detected:', completion.choices[0].message.tool_calls.length);
-                // The response should already include the web search results
-                response = completion.choices[0].message.content || 'Information retrieved using web search.';
-            }
-
-            console.log('🤖 ChatGPT response:', response ? response.substring(0, 200) + '...' : 'No response content');
+            const response = completion.choices[0].message.content;
+            console.log('🤖 ChatGPT response:', response);
 
             // Add assistant response to history
             this.addToHistory('assistant', response);
@@ -321,10 +226,39 @@ RESPONSE FORMAT:
         }
     }
 
+    buildScreenContext(screenshots) {
+        if (!screenshots || screenshots.length === 0) {
+            return '';
+        }
+
+        const contextParts = screenshots.map((screenshot, index) => {
+            const timestamp = new Date(screenshot.payload.timestamp).toLocaleString();
+            const text = screenshot.payload.text.substring(0, 300);
+            const score = (screenshot.score * 100).toFixed(1);
+            
+            return `Screenshot ${index + 1} (${score}% relevant, captured ${timestamp}):
+Content: ${text}${screenshot.payload.text.length > 300 ? '...' : ''}`;
+        });
+
+        return `RELEVANT SCREEN CONTEXT:
+${contextParts.join('\n\n')}
+
+Use this context to provide more relevant and contextual responses. If the user is asking about something visible on their screen, reference this information. If the context isn't relevant to their question, respond normally without mentioning it.`;
+    }
+
+    buildSystemPrompt(screenContext) {
+        let prompt = "You are a helpful AI assistant integrated with the user's desktop. Provide concise, helpful responses.";
+
+        if (screenContext) {
+            prompt += `\n\n${screenContext}`;
+        }
+
+        return prompt;
+    }
+
     addToHistory(role, content) {
         this.conversationHistory.push({ role, content });
         
-        // Keep only the last maxHistoryLength exchanges
         if (this.conversationHistory.length > this.maxHistoryLength * 2) {
             this.conversationHistory = this.conversationHistory.slice(-this.maxHistoryLength * 2);
         }
