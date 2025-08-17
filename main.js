@@ -9,12 +9,14 @@ dotenv.config();
 const WakeWordHandler = require('./wakeword-handler');
 const TranscriptionHandler = require('./transcription-handler');
 const ChatGPTHandler = require('./chatgpt-handler');
+const ScreenpipeHandler = require('./screenpipe-handler');
 
 // Global variables
 let mainWindow;
 let wakeWordHandler;
 let transcriptionHandler;
 let chatGPTHandler;
+let screenpipeHandler;
 
 // State
 let isAgentRunning = false;
@@ -80,6 +82,34 @@ function initializeHandlers() {
         mainWindow.webContents.send('error', 'Failed to initialize OpenAI. Check your API key.');
     } else {
         console.log('✅ OpenAI initialized successfully');
+    }
+
+    // Initialize screenpipe handler
+    screenpipeHandler = new ScreenpipeHandler();
+    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
+        console.error('❌ OpenAI API key not configured for screenpipe');
+        mainWindow.webContents.send('error', 'OpenAI API key not configured for screenpipe. Please add your OPENAI_API_KEY to the .env file.');
+    } else {
+        screenpipeHandler.initialize(process.env.OPENAI_API_KEY).then((success) => {
+            if (success) {
+                console.log('✅ Screenpipe handler initialized successfully');
+                
+                // Connect screenpipe handler to ChatGPT handler
+                if (chatGPTHandler) {
+                    chatGPTHandler.setScreenpipeHandler(screenpipeHandler);
+                    console.log('✅ Screenpipe context integration enabled');
+                }
+                
+                // Start periodic screenshot capture if enabled
+                if (process.env.SCREENSHOT_CAPTURE_ENABLED === 'true') {
+                    const interval = parseFloat(process.env.SCREENSHOT_CAPTURE_INTERVAL) || 0.17; // 10 seconds default
+                    screenpipeHandler.startPeriodicCapture(interval);
+                }
+            } else {
+                console.error('❌ Failed to initialize screenpipe handler');
+                mainWindow.webContents.send('error', 'Failed to initialize screenpipe handler. Check your OpenAI API key and ensure Qdrant is running.');
+            }
+        });
     }
 
     console.log('✅ Handlers initialized');
@@ -241,7 +271,8 @@ function updateStatus() {
     const status = {
         wakeword: isAgentRunning,
         transcription: isListening,
-        chatgpt: chatGPTHandler && chatGPTHandler.openai !== null
+        chatgpt: chatGPTHandler && chatGPTHandler.openai !== null,
+        screenpipe: screenpipeHandler && screenpipeHandler.isInitialized
     };
     
     mainWindow.webContents.send('status-update', status);
@@ -287,6 +318,65 @@ ipcMain.on('audio-data', (event, audioBuffer) => {
     } else {
         console.log('⚠️ Transcription handler not active, ignoring audio data for transcription');
     }
+});
+
+// Screenpipe IPC handlers
+ipcMain.handle('capture-screenshot', async () => {
+    if (!screenpipeHandler || !screenpipeHandler.isInitialized) {
+        throw new Error('Screenpipe handler not initialized');
+    }
+    return await screenpipeHandler.captureAndProcess();
+});
+
+ipcMain.handle('search-screenshots', async (event, { query, limit }) => {
+    if (!screenpipeHandler || !screenpipeHandler.isInitialized) {
+        throw new Error('Screenpipe handler not initialized');
+    }
+    return await screenpipeHandler.searchScreenshots(query, limit);
+});
+
+ipcMain.handle('get-screenshot', async (event, { id }) => {
+    if (!screenpipeHandler || !screenpipeHandler.isInitialized) {
+        throw new Error('Screenpipe handler not initialized');
+    }
+    return await screenpipeHandler.getScreenshotById(id);
+});
+
+ipcMain.handle('delete-screenshot', async (event, { id }) => {
+    if (!screenpipeHandler || !screenpipeHandler.isInitialized) {
+        throw new Error('Screenpipe handler not initialized');
+    }
+    return await screenpipeHandler.deleteScreenshot(id);
+});
+
+ipcMain.handle('get-screenpipe-stats', async () => {
+    if (!screenpipeHandler || !screenpipeHandler.isInitialized) {
+        throw new Error('Screenpipe handler not initialized');
+    }
+    return await screenpipeHandler.getStats();
+});
+
+ipcMain.handle('start-periodic-capture', async (event, { intervalMinutes }) => {
+    if (!screenpipeHandler || !screenpipeHandler.isInitialized) {
+        throw new Error('Screenpipe handler not initialized');
+    }
+    await screenpipeHandler.startPeriodicCapture(intervalMinutes);
+    return { success: true };
+});
+
+ipcMain.handle('stop-periodic-capture', async () => {
+    if (!screenpipeHandler) {
+        return { success: true };
+    }
+    screenpipeHandler.stopPeriodicCapture();
+    return { success: true };
+});
+
+ipcMain.handle('cleanup-old-screenshots', async (event, { maxScreenshots }) => {
+    if (!screenpipeHandler || !screenpipeHandler.isInitialized) {
+        throw new Error('Screenpipe handler not initialized');
+    }
+    return await screenpipeHandler.cleanupOldScreenshots(maxScreenshots || 1000);
 });
 
 // App lifecycle
@@ -339,6 +429,10 @@ app.on('will-quit', () => {
     
     if (transcriptionHandler) {
         transcriptionHandler.stopTranscription();
+    }
+    
+    if (screenpipeHandler) {
+        screenpipeHandler.cleanup();
     }
     
     console.log('✅ Cleanup completed');

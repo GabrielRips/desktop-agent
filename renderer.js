@@ -18,6 +18,17 @@ const micIndicator = document.getElementById('mic-indicator');
 const wakewordStatus = document.getElementById('wakeword-status');
 const transcriptionStatus = document.getElementById('transcription-status');
 const chatgptStatus = document.getElementById('chatgpt-status');
+const screenpipeStatus = document.getElementById('screenpipe-status');
+
+// Screenpipe elements
+const captureScreenshotBtn = document.getElementById('capture-screenshot-btn');
+const searchScreenshotsBtn = document.getElementById('search-screenshots-btn');
+const screenpipeStatsBtn = document.getElementById('screenpipe-stats-btn');
+const searchModal = document.getElementById('search-modal');
+const statsModal = document.getElementById('stats-modal');
+const searchInput = document.getElementById('search-input');
+const searchResults = document.getElementById('search-results');
+const statsGrid = document.getElementById('stats-grid');
 
 // State
 let isAgentRunning = false;
@@ -223,6 +234,24 @@ function setupEventListeners() {
     const testWakeWordBtn = document.getElementById('test-wakeword-btn');
     if (testWakeWordBtn) {
         testWakeWordBtn.addEventListener('click', testWakeWordDetection);
+    }
+
+    // Screenpipe event listeners
+    if (captureScreenshotBtn) {
+        captureScreenshotBtn.addEventListener('click', captureScreenshot);
+    }
+    if (searchScreenshotsBtn) {
+        searchScreenshotsBtn.addEventListener('click', openSearchModal);
+    }
+    if (screenpipeStatsBtn) {
+        screenpipeStatsBtn.addEventListener('click', showScreenpipeStats);
+    }
+    if (searchInput) {
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                performSearch();
+            }
+        });
     }
 }
 
@@ -441,11 +470,95 @@ ipcRenderer.on('status-update', (event, status) => {
     
     if (status.chatgpt) chatgptStatus.classList.add('active');
     else chatgptStatus.classList.remove('active');
+    
+    if (status.screenpipe) screenpipeStatus.classList.add('active');
+    else screenpipeStatus.classList.remove('active');
 });
 
 ipcRenderer.on('error', (event, error) => {
     addMessage(`Error: ${error}`, 'system');
 });
+
+// Screenpipe functions
+async function captureScreenshot() {
+    try {
+        addMessage('📸 Capturing screenshot...', 'system');
+        const result = await ipcRenderer.invoke('capture-screenshot');
+        
+        if (result.success) {
+            addMessage(`✅ Screenshot captured! ID: ${result.id}`, 'system');
+            addMessage(`Text extracted: ${result.text.substring(0, 100)}${result.text.length > 100 ? '...' : ''}`, 'system');
+        } else {
+            addMessage(`❌ Screenshot capture failed: ${result.error}`, 'system');
+        }
+    } catch (error) {
+        addMessage(`❌ Screenshot error: ${error.message}`, 'system');
+    }
+}
+
+function openSearchModal() {
+    searchModal.classList.add('active');
+    searchInput.focus();
+}
+
+function closeSearchModal() {
+    searchModal.classList.remove('active');
+    searchInput.value = '';
+    searchResults.innerHTML = '';
+}
+
+async function performSearch() {
+    const query = searchInput.value.trim();
+    if (!query) return;
+
+    try {
+        searchResults.innerHTML = '<div style="text-align: center; opacity: 0.7;">Searching...</div>';
+        
+        const results = await ipcRenderer.invoke('search-screenshots', { query, limit: 10 });
+        
+        if (results.length === 0) {
+            searchResults.innerHTML = '<div style="text-align: center; opacity: 0.7;">No results found</div>';
+            return;
+        }
+
+        searchResults.innerHTML = results.map(result => `
+            <div class="search-result">
+                <div class="search-result-header">
+                    <span class="search-result-score">Score: ${(result.score * 100).toFixed(1)}%</span>
+                </div>
+                <div class="search-result-text">${result.payload.text.substring(0, 200)}${result.payload.text.length > 200 ? '...' : ''}</div>
+                <div class="search-result-timestamp">${new Date(result.payload.timestamp).toLocaleString()}</div>
+            </div>
+        `).join('');
+    } catch (error) {
+        searchResults.innerHTML = `<div style="text-align: center; color: #ff4757;">Error: ${error.message}</div>`;
+    }
+}
+
+async function showScreenpipeStats() {
+    try {
+        const stats = await ipcRenderer.invoke('get-screenpipe-stats');
+        
+        statsGrid.innerHTML = `
+            <div class="stat-item">
+                <div class="stat-value">${stats.totalScreenshots}</div>
+                <div class="stat-label">Total Screenshots</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">${stats.diskUsageMB}</div>
+                <div class="stat-label">Disk Usage (MB)</div>
+            </div>
+        `;
+        
+        statsModal.classList.add('active');
+    } catch (error) {
+        addMessage(`❌ Failed to get stats: ${error.message}`, 'system');
+    }
+}
+
+function closeStatsModal() {
+    statsModal.classList.remove('active');
+}
 
 // Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', initializeUI);
