@@ -126,11 +126,22 @@ class AgentExecutor {
                 if (code === 0) {
                     // Extract the result from stdout (look for the "RESULT:" section)
                     const resultMatch = stdout.match(/✅ RESULT:\s*([\s\S]*?)(?=\n\n|\n🔧|\n$|$)/);
-                    const output = resultMatch ? resultMatch[1].trim() : 'Automation completed successfully';
+                    let output = resultMatch ? resultMatch[1].trim() : 'Automation completed successfully';
+                    let intentType = 'action'; // default to action
+                    
+                    // Determine intent type based on response prefix
+                    if (output.startsWith('QUESTION_RESPONSE:')) {
+                        intentType = 'question';
+                        output = output.replace('QUESTION_RESPONSE:', '').trim();
+                    } else if (output.startsWith('AUTOMATION_ACTION:')) {
+                        intentType = 'action';
+                        output = output.replace('AUTOMATION_ACTION:', '').trim();
+                    }
                     
                     resolve({ 
                         success: true, 
                         output: output,
+                        type: intentType,
                         fullOutput: stdout
                     });
                 } else {

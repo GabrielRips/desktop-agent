@@ -11,6 +11,68 @@ const TranscriptionHandler = require('./transcription-handler');
 const ChatGPTHandler = require('./chatgpt-handler');
 const AgentExecutor = require('./agent-executor');
 
+// Simple intent detection function
+function detectIntent(text) {
+    const lowerText = text.toLowerCase().trim();
+    console.log('🔍 Main detectIntent called with:', lowerText);
+    
+    // Question patterns
+    const questionPatterns = [
+        /^what(\s+is|\s+are|\s+was|\s+were|\s+does|\s+do|\s+did|\s+'s)/,
+        /^how(\s+do|\s+does|\s+did|\s+can|\s+to|\s+much|\s+many)/,
+        /^why(\s+is|\s+are|\s+do|\s+does|\s+did)/,
+        /^when(\s+is|\s+are|\s+was|\s+were|\s+do|\s+does|\s+did)/,
+        /^where(\s+is|\s+are|\s+was|\s+were|\s+do|\s+does|\s+did)/,
+        /^who(\s+is|\s+are|\s+was|\s+were)/,
+        /^which(\s+is|\s+are|\s+was|\s+were)/,
+        /^can\s+you(\s+tell|\s+explain|\s+describe)/,
+        /^tell\s+me(\s+about)/,
+        /^explain/,
+        /^describe/,
+        /weather/,
+        /time(\s+is\s+it)?$/,
+        /^\w+\s+today\?*$/
+    ];
+    
+    // Action patterns (automation commands)
+    const actionPatterns = [
+        /^(open|launch|start|run)/,
+        /^(close|quit|exit|stop)/,
+        /^(click|press|tap)/,
+        /^(type|write|enter)/,
+        /^(go\s+to|navigate)/,
+        /^(copy|paste|cut)/,
+        /^(save|download|upload)/,
+        /^(delete|remove|clear)/,
+        /^(create|make|new)/,
+        /^(find|search|look)/,
+        /^(clone|git)/,
+        /^(take\s+a?\s?screenshot|screenshot)/,
+        /browser|window|application|app|terminal|finder/
+    ];
+    
+    // Check for question patterns first
+    const isQuestion = questionPatterns.some(pattern => pattern.test(lowerText));
+    if (isQuestion) {
+        console.log('✅ Matched question pattern');
+        return 'question';
+    }
+    
+    // Check for action patterns
+    const isAction = actionPatterns.some(pattern => pattern.test(lowerText));
+    if (isAction) {
+        console.log('🤖 Matched action pattern');
+        return 'action';
+    }
+    
+    // Default to question for ambiguous cases (faster path)
+    console.log('❓ No specific pattern matched, defaulting to question');
+    return 'question';
+}
+
+// Note: We now let the AI intelligently determine if screen analysis is needed
+// instead of using hardcoded patterns
+
 // Global variables
 let mainWindow;
 let wakeWordHandler;
@@ -46,13 +108,27 @@ function createWindow() {
         show: false,
         backgroundColor: '#00000040', // Semi-transparent background
         vibrancy: 'dark', // macOS vibrancy effect
-        visualEffectState: 'active'
+        visualEffectState: 'active',
+        hasShadow: false, // Remove shadow to reduce visual footprint
+        acceptFirstMouse: true, // Accept clicks immediately
+        fullscreenWindowTitle: false, // Don't interfere with fullscreen apps
+        thickFrame: false // Prevent thick frame interference
     });
 
     mainWindow.loadFile('index.html');
 
     mainWindow.once('ready-to-show', () => {
         mainWindow.show();
+        // Always start with click-through DISABLED - window should be clickable by default
+        setClickThrough(false);
+        console.log('🖱️ Window shown - keeping clickable for easy interaction');
+        
+        // Don't auto-enable click-through - let the hover logic handle it
+    });
+
+    // Handle mouse enter/leave to control click-through
+    mainWindow.webContents.on('dom-ready', () => {
+        console.log('🖱️ DOM ready - click-through will be managed by hover events');
     });
 
     // Open DevTools in development
@@ -248,11 +324,76 @@ function startListening() {
                 console.log('📝 Final transcript:', transcriptData.transcript);
                 mainWindow.webContents.send('transcription-final', transcriptData);
                 
-                // Send directly to agent.ts for analysis and execution
-                console.log('🤖 Sending directly to agent.ts:', transcriptData.transcript);
+                // Quick intent detection to choose fast or slow path
+                const intent = detectIntent(transcriptData.transcript);
+                console.log('🎯 Detected intent:', intent, 'for:', transcriptData.transcript);
                 console.log('📸 Screenshot available:', !!lastScreenshot);
                 
-                if (agentExecutor && agentExecutor.isReady()) {
+                // Add debug logging for intent detection
+                if (intent === 'question') {
+                    console.log('✅ Question detected, taking fast path');
+                } else {
+                    console.log('🤖 Action detected, taking automation path');
+                }
+                
+                if (intent === 'question') {
+                    // FAST PATH: Direct to ChatGPT for questions
+                    console.log('🚀 Taking fast path for question...');
+                    console.log('📋 Question route - stopping transcription to avoid interference');
+                    stopListening(); // Stop listening for questions too to avoid interference
+                    
+                    mainWindow.webContents.send('question-processing', { command: transcriptData.transcript });
+                    
+                    // Always pass screenshot for questions - let AI decide if it needs to analyze it
+                    const screenshotToUse = lastScreenshot;
+                    
+                    console.log('🔍 Question analysis:', {
+                        hasScreenshot: !!lastScreenshot,
+                        willPassScreenshot: !!screenshotToUse,
+                        aiWillDecide: true
+                    });
+                    
+                    chatGPTHandler.sendMessage(
+                        transcriptData.transcript,
+                        (response) => {
+                            console.log('💬 ChatGPT question response received successfully');
+                            console.log('📄 Response length:', response.length, 'characters');
+                            mainWindow.webContents.send('question-response', { 
+                                command: transcriptData.transcript,
+                                response: response 
+                            });
+                            
+                            // Resume transcription after question
+                            setTimeout(() => {
+                                if (isAgentRunning && !isListening) {
+                                    console.log('🔄 Resuming after question response...');
+                                    updateStatus();
+                                }
+                            }, 1000);
+                        },
+                        (error) => {
+                            console.error('❌ ChatGPT question error details:', error);
+                            mainWindow.webContents.send('question-error', { 
+                                command: transcriptData.transcript,
+                                error: error 
+                            });
+                            
+                            // Resume transcription after error
+                            setTimeout(() => {
+                                if (isAgentRunning && !isListening) {
+                                    console.log('🔄 Resuming after question error...');
+                                    updateStatus();
+                                }
+                            }, 1000);
+                        },
+                        screenshotToUse, // Pass screenshot only for screen-specific questions
+                        true  // Explicitly mark as question
+                    );
+                    
+
+                    
+                } else if (agentExecutor && agentExecutor.isReady()) {
+                    // SLOW PATH: Full automation for actions
                     console.log('🤖 Executing automation via agent.ts...');
                     
                     // Stop transcription while executing to avoid interference
@@ -265,15 +406,26 @@ function startListening() {
                         const result = await agentExecutor.executeCommand(transcriptData.transcript, lastScreenshot);
                         
                         if (result.success) {
-                            console.log('✅ Agent automation successful:', result.output);
-                            mainWindow.webContents.send('automation-success', { 
-                                command: transcriptData.transcript,
-                                result: result.output 
-                            });
+                            console.log('✅ Agent response successful:', result.output);
+                            console.log('🎯 Response type:', result.type);
+                            
+                            if (result.type === 'question') {
+                                // For questions: send to UI for display
+                                mainWindow.webContents.send('question-response', { 
+                                    command: transcriptData.transcript,
+                                    response: result.output 
+                                });
+                            } else {
+                                // For actions: send automation success
+                                mainWindow.webContents.send('automation-success', { 
+                                    command: transcriptData.transcript,
+                                    result: result.output 
+                                });
+                            }
                             // Also send as chatgpt-response for UI compatibility
                             mainWindow.webContents.send('chatgpt-response', { response: result.output });
                         } else {
-                            console.error('❌ Agent automation failed:', result.error);
+                            console.error('❌ Agent response failed:', result.error);
                             mainWindow.webContents.send('automation-error', { 
                                 command: transcriptData.transcript,
                                 error: result.error 
@@ -309,23 +461,36 @@ function startListening() {
                         }, 1000); // Brief delay before resuming
                     }
                 } else {
-                    console.log('ℹ️ Agent executor not ready, falling back to ChatGPT only');
+                    console.log('ℹ️ Agent executor not ready, falling back to ChatGPT for action');
                     // Fallback to ChatGPT handler if agent executor is not ready
+                    mainWindow.webContents.send('automation-starting', { command: transcriptData.transcript });
+                    
                     chatGPTHandler.sendMessage(
                         transcriptData.transcript,
                         (response) => {
                             console.log('🤖 ChatGPT fallback response:', response);
-                            mainWindow.webContents.send('chatgpt-response', { response });
+                            mainWindow.webContents.send('automation-success', { 
+                                command: transcriptData.transcript,
+                                result: response 
+                            });
                         },
                         (error) => {
                             console.error('❌ ChatGPT fallback error:', error);
-                            mainWindow.webContents.send('chatgpt-response', { error });
+                            mainWindow.webContents.send('automation-error', { 
+                                command: transcriptData.transcript,
+                                error: error 
+                            });
                         },
                         lastScreenshot
                     );
                     
-                    // Stop listening after fallback ChatGPT response
-                    stopListening();
+                    // Resume transcription after fallback
+                    setTimeout(() => {
+                        if (isAgentRunning && !isListening) {
+                            console.log('🔄 Resuming after fallback...');
+                            updateStatus();
+                        }
+                    }, 1000);
                 }
                 
                 // Clear screenshot after use
@@ -387,6 +552,14 @@ function updateStatus() {
     mainWindow.webContents.send('status-update', status);
 }
 
+// Click-through management
+function setClickThrough(enabled) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setIgnoreMouseEvents(enabled, { forward: true });
+        console.log(enabled ? '🖱️ Click-through enabled' : '🖱️ Click-through disabled');
+    }
+}
+
 // IPC handlers
 ipcMain.on('start-agent', () => {
     startAgent();
@@ -408,6 +581,63 @@ ipcMain.on('minimize-to-tray', () => {
     if (mainWindow) {
         mainWindow.hide();
     }
+});
+
+ipcMain.on('set-click-through', (event, enabled) => {
+    setClickThrough(enabled);
+});
+
+// Handle widget interaction states
+let leaveTimeout = null;
+let isDragging = false;
+
+ipcMain.on('widget-mouse-enter', () => {
+    console.log('🖱️ Mouse entered widget area');
+    // Clear any pending re-enable timeout
+    if (leaveTimeout) {
+        clearTimeout(leaveTimeout);
+        leaveTimeout = null;
+    }
+    // IMMEDIATELY disable click-through - no delay
+    setClickThrough(false);
+});
+
+ipcMain.on('widget-mouse-leave', () => {
+    console.log('🖱️ Mouse left widget area');
+    // Only re-enable click-through if not currently dragging with a longer delay
+    if (!isDragging) {
+        leaveTimeout = setTimeout(() => {
+            if (!isDragging && mainWindow && !mainWindow.isDestroyed()) {
+                setClickThrough(true);
+                console.log('🖱️ Re-enabled click-through after mouse leave');
+            }
+        }, 2000); // Increased to 2 seconds to give more time to interact
+    }
+});
+
+// Handle drag events
+ipcMain.on('widget-drag-start', () => {
+    console.log('🖱️ Widget drag started');
+    isDragging = true;
+    // Clear any pending timeouts
+    if (leaveTimeout) {
+        clearTimeout(leaveTimeout);
+        leaveTimeout = null;
+    }
+    // Ensure click-through is disabled
+    setClickThrough(false);
+});
+
+ipcMain.on('widget-drag-end', () => {
+    console.log('🖱️ Widget drag ended');
+    isDragging = false;
+    // Longer delay before potentially re-enabling click-through to allow for more interactions
+    setTimeout(() => {
+        if (!isDragging) {
+            setClickThrough(true);
+            console.log('🖱️ Re-enabled click-through after drag end');
+        }
+    }, 1000); // Increased to 1 second
 });
 
 ipcMain.on('show-widget', () => {
