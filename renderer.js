@@ -141,6 +141,7 @@ function initializeUI() {
         console.error('❌ Audio capture initialization failed:', error);
     }
     
+
     console.log('✅ UI initialization complete');
 
     // Initialize status
@@ -235,11 +236,13 @@ function showTemporaryMessage(message, type = 'info', duration = 3000) {
 function showResponseArea(response) {
     console.log('📄 Showing response area with text:', response ? response.substring(0, 100) + '...' : 'EMPTY RESPONSE');
     
+
     // Get all elements fresh every time
     const responseContent = document.getElementById('response-content');
     const responseArea = document.getElementById('response-area');
     const widgetContainer = document.querySelector('.widget-container');
     const widgetContent = document.querySelector('.widget-content');
+
     
     console.log('🔍 Show - Element check:', {
         responseContent: !!responseContent,
@@ -338,12 +341,14 @@ function hideResponseArea() {
     const widgetContent = document.querySelector('.widget-content');
     const responseContent = document.getElementById('response-content');
     
+
     console.log('🔍 Hide - Element check:', {
         responseArea: !!responseArea,
         widgetContainer: !!widgetContainer,
         widgetContent: !!widgetContent,
         responseContent: !!responseContent
     });
+
     
     // Immediately hide the response area completely
     if (responseArea) {
@@ -389,6 +394,7 @@ function hideResponseArea() {
     }
 }
 
+
 // IPC Event Handlers
 ipcRenderer.on('agent-started', () => {
     isAgentRunning = true;
@@ -406,6 +412,7 @@ ipcRenderer.on('agent-stopped', () => {
 ipcRenderer.on('wake-word-detected', (event, detection) => {
     console.log('📢 Wake word detected:', detection);
     updateStatus('listening', 'Wake Word!', 'Listening for command...');
+
     
     // Brief flash animation
     setTimeout(() => {
@@ -476,11 +483,14 @@ ipcRenderer.on('automation-success', (event, data) => {
     }, 3000);
 });
 
+
 // Handler for question processing (fast path)
 ipcRenderer.on('question-processing', (event, data) => {
     console.log('🚀 Question processing (fast path):', data.command);
     updateStatus('processing', 'Thinking...', 'Getting your answer quickly');
 });
+
+
 
 // New handler for question responses
 ipcRenderer.on('question-response', (event, data) => {
@@ -495,6 +505,7 @@ ipcRenderer.on('question-response', (event, data) => {
     }
     
     showResponseArea(data.response);
+
 });
 
 // Handler for question errors
